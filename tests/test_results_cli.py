@@ -149,19 +149,18 @@ def test_pair_custom_metric(two_expts):
 
 # --- compare tests ---
 
-def test_compare_shows_diffs(two_expts):
-    result = runner.invoke(app, ['compare', '--latest', '0'] + _dirs_as_args(two_expts))
+def test_compare_configs_shows_diffs(two_expts):
+    result = runner.invoke(app, ['compare-configs', '--latest', '0'] + _dirs_as_args(two_expts))
     assert result.exit_code == 0
-    assert 'llm.model' in result.output
-    assert 'model-a' in result.output
-    assert 'model-b' in result.output
+    assert 'properties of' in result.output
+    assert 'llm.model=model-a' in result.output
+    assert 'llm.model=model-b' in result.output
 
 
-def test_compare_needs_two(two_expts):
-    result = runner.invoke(app, ['compare', '--check', 'evaluate.expt_name=baseline']
+def test_compare_configs_single_expt(two_expts):
+    result = runner.invoke(app, ['compare-configs', '--check', 'evaluate.expt_name=baseline']
                            + _dirs_as_args(two_expts))
-    assert result.exit_code == 1
-    assert 'Need at least 2' in result.output
+    assert result.exit_code == 0
 
 
 # --- config file option ---
