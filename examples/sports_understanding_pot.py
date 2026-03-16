@@ -61,7 +61,7 @@ if __name__ == '__main__':
         llm={'model': "claude-haiku-4-5-20251001"}, 
         echo={'llm_input': True, 'llm_output': True, 
               'code_eval_input': True, 'code_eval_output': True},
-        cachier={'enable_caching': True, 'cache_dir': '/tmp/su_pyd.d'})
+        cachier={'enable_caching': False, 'cache_dir': '/tmp/su_pyd.d'})
 
     with record.recorder() as rollout:
         result = are_sports_in_sentence_consistent("Tim Duncan scored from inside the paint.")

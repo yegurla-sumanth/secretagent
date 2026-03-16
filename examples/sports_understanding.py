@@ -98,25 +98,14 @@ if __name__ == '__main__':
   # This context manager will push some more things into the
   # configuration and remove them when we exit.  In this case we
   # config request to trace some actions.
-  with config.configuration(echo={'service': True, 'llm_input': True, 'llm_output': True}):
+  with config.configuration(
+      echo={'service': True, 'llm_input': True, 'llm_output': True},
+      cachier={'enable_caching': False}):
     result = sports_understanding_workflow("Tim Duncan scored from inside the paint.")
     print('Traced result is', result)
 
-  # You can get back more information using a this context manager
-
+  # You can get back more information using this context manager
   _print_section_head('recording the same workflow')
   with record.recorder() as rollout:
     result = sports_understanding_workflow("DeMar DeRozan was called for the goal tend.")
     pprint.pprint(rollout)
-
-  # Another implementation strategy is just to define your own prompt
-  # template, either with a string (prompt_template_str) or a file
-  # (prompt_template_file).
-
-  _print_section_head('reminding an interface to a different implementation')
-  sport_for.implement_via(
-    'prompt_llm',
-    prompt_template_str="Answer without thinking: what sport is associated with '$x'?")
-
-  with config.configuration(echo={'service': True, 'llm_input': True, 'llm_output': True}):
-    print(sport_for('Michael Jordan'))
