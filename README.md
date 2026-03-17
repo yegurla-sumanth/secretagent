@@ -4,8 +4,15 @@ Lightweight Python framework for building agentic systems where
 everything looks like code.
 
 You define Python stubs with only a type signature and docstring,
-decorate them with `@interface`, and bind them to implementations
-via `implement_via()` and a registry of factories.
+decorate them with `@interface`, and separately bind them to concrete
+implementations, which can be Python code, single calls to an LLM, or
+agentic, tool-using calls to an LLM.  
+
+There is also support for implementing an Interface using only an LLM
+and the docstring and type signature associated with the stub.
+
+This architecture lets you easily explore the space of different ways
+to decompose a problem into modular components.
 
 ## Installation
 
@@ -85,11 +92,50 @@ Key configuration sections:
 
 ### Built-in factories
 
-- `'direct'` -- use the function body as the implementation
-- `'echo'` -- print the call signature (debugging)
-- `'simulate'` -- prompt an LLM to predict the function output
-- `'prompt_llm'` -- use a custom prompt template
-- `'simulate_pydantic'` -- like simulate but uses a pydantic-ai Agent
+- **`'direct'`** -- use the function body (or another callable) as the implementation.
+  ```python
+  my_iface.implement_via('direct')                    # use the stub's own body
+  my_iface.implement_via('direct', fn=some_function)  # use a specific callable
+  my_iface.implement_via('direct', fn='mymod.func')   # resolve a dotted name
+  ```
+
+- **`'simulate'`** -- prompt an LLM to predict the function output from the
+  stub's docstring and type signature.
+  ```python
+  my_iface.implement_via('simulate', llm={'model': 'claude-haiku-4-5-20251001'})
+  ```
+
+- **`'simulate_pydantic'`** -- like simulate but uses a pydantic-ai Agent,
+  which can call tools in a ReAct-like loop and return structured Pydantic output.
+  ```python
+  my_iface.implement_via('simulate_pydantic', llm={'model': 'claude-haiku-4-5-20251001'})
+  my_iface.implement_via('simulate_pydantic', tools='__all__')   # use all other interfaces as tools
+  my_iface.implement_via('simulate_pydantic', tools=[tool_a, tool_b])  # specific tools
+  ```
+
+- **`'program_of_thought'`** -- generate Python code with an LLM and execute it
+  in a sandboxed executor. Tools are available as callable functions in the
+  generated code.
+  ```python
+  my_iface.implement_via('program_of_thought', llm={'model': 'claude-haiku-4-5-20251001'})
+  my_iface.implement_via('program_of_thought', tools='__all__')  # default: all other interfaces
+  my_iface.implement_via('program_of_thought', tools=[tool_a])   # specific tools
+  ```
+
+- **`'prompt_llm'`** -- use a custom prompt template with the LLM.
+  ```python
+  my_iface.implement_via('prompt_llm',
+      prompt_template_str='Translate to French: $text',
+      llm={'model': 'claude-haiku-4-5-20251001'})
+  my_iface.implement_via('prompt_llm',
+      prompt_template_file='prompts/my_template.txt',
+      answer_pattern=r'<answer>(.*)</answer>')
+  ```
+
+All factories also accept config overrides as keyword arguments (e.g.
+`llm={'model': ...}`, `echo={'llm_input': True}`), which are applied
+via `config.configuration()` during execution.
+
 
 ## Benchmarks
 

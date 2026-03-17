@@ -71,3 +71,13 @@ workflows here
    * `average` - show average values for each expt_name
    * `pair` - run paired tests (the p values should be < 0.05 for differences to be significant)
    * `compare` - review the config options that differ in the selected runs
+
+All of the `cli.results` calls end with a list of `results` directories, which you can specify with 
+a `results/*` glob or with a more specific file list.  They can also be modified by arguments before
+the list directories:
+
+The argument `--check config.param=value` restricts the list to ones with the specified config params.
+Multiple `--check` args can be used to check multiple values.
+
+The argument `--latest k` means to consider the `k` most recent
+directories for each expt_name, instead of the single most recent one.
