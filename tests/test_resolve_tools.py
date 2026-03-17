@@ -182,6 +182,30 @@ def test_resolve_tools_mixed():
     _INTERFACES.remove(main_fn)
 
 
+def test_resolve_tools_string_resolving_to_interface():
+    """A string that resolves to an Interface yields the implementing function."""
+    @interface
+    def tool_iface(x: int) -> int:
+        """A tool."""
+        return x + 1
+
+    tool_iface.implement_via('direct')
+
+    # stash it on the module so resolve_dotted can find it
+    import tests.test_resolve_tools as this_module
+    this_module._tool_iface_for_test = tool_iface
+
+    @interface
+    def main_fn(x: int) -> int:
+        """Main."""
+
+    resolved = resolve_tools(main_fn, ['tests.test_resolve_tools._tool_iface_for_test'])
+    assert resolved == [tool_iface.implementation.implementing_fn]
+    del this_module._tool_iface_for_test
+    _INTERFACES.remove(tool_iface)
+    _INTERFACES.remove(main_fn)
+
+
 def test_resolve_tools_string_bad_name():
     """A bad dotted string raises an error."""
     @interface

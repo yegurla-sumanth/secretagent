@@ -51,8 +51,8 @@ def resolve_tools(interface: Interface, tools) -> list[Callable]:
     resolved = []
     for tool in tools:
         if isinstance(tool, str):
-            resolved.append(resolve_dotted(tool))
-        elif isinstance(tool, Interface):
+            tool = resolve_dotted(tool)
+        if isinstance(tool, Interface):
             if tool.implementation is None:
                 raise ValueError(f'Interface {tool.name!r} has no implementation')
             resolved.append(tool.implementation.implementing_fn)
