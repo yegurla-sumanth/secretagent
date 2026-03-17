@@ -18,7 +18,7 @@ def all_interfaces() -> list['Interface']:
     
 def all_factories() -> list[tuple[str, 'Implementation.Factory']]:
     """Return all registered Implementation.Factory's."""
-    return _FACTORIES.items()
+    return list(_FACTORIES.items())
 
 def register_factory(name: str, factory: 'Implementation.Factory'):
     """Register an Implementation.Factory under the given name."""

@@ -12,8 +12,8 @@ alongside the output files.
 import datetime
 import os
 from collections import defaultdict
+from collections.abc import Sequence
 from pathlib import Path
-import warnings
 
 from omegaconf import OmegaConf
 
@@ -21,7 +21,7 @@ from secretagent import config
 
 DEFAULT_TAG = '_untagged_'
 
-def filename_list(basedir: str,  names: list[str], file_under: str = DEFAULT_TAG) -> list[Path]:
+def filename_list(basedir: str | Path,  names: list[str], file_under: str = DEFAULT_TAG) -> list[Path]:
     """Create a timestamped directory and return paths for each name.
 
     Args:
@@ -37,7 +37,7 @@ def filename_list(basedir: str,  names: list[str], file_under: str = DEFAULT_TAG
     return [dirname / name for name in names]
 
 
-def filename(basedir: str, name: str, file_under: str = DEFAULT_TAG) -> Path:
+def filename(basedir: str | Path, name: str, file_under: str = DEFAULT_TAG) -> Path:
     """Create a timestamped directory and return a path for a single file.
 
     Convenience wrapper around filename_list.
@@ -55,7 +55,7 @@ def file_under_part(p: Path) -> str:
     return parts[2] if len(parts) > 2 else ''
 
 
-def filter_paths(paths: list[Path], latest: int = 0, dotlist: list[str] = []) -> list[Path]:
+def filter_paths(paths: Sequence[str | Path], latest: int = 0, dotlist: list[str] = []) -> list[Path]:
     """Filter experiment directory paths.
 
     Args:
@@ -70,18 +70,18 @@ def filter_paths(paths: list[Path], latest: int = 0, dotlist: list[str] = []) ->
     Returns:
         list of matching Path objects, sorted newest-first
     """
-    def _normalize(file_or_dir):
+    def _normalize(file_or_dir: str | Path) -> Path:
         p = Path(file_or_dir)
         result = p.parent if p.is_file() else p
         if not (p / 'config.yaml').exists():
             raise ValueError(f'No config.yaml in {p}')
         return result
-    paths = [_normalize(p) for p in paths]
+    norm_paths: list[Path] = [_normalize(p) for p in paths]
     # normalize the dotlist
     constraints = set(config.to_dotlist(OmegaConf.from_dotlist(dotlist)))
     by_tag = defaultdict(list)
     # go through paths most recent first
-    for p in sorted(paths, reverse=True):
+    for p in sorted(norm_paths, reverse=True):
         cfg_for_p = config.load_yaml_cfg(p / 'config.yaml')
         active = set(config.to_dotlist(cfg_for_p))
         config.sanity_check('filter_paths', constraints, cfg_for_p)

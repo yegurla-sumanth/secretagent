@@ -1,6 +1,5 @@
 """Tests for secretagent.evaluate."""
 
-import os
 import pytest
 from omegaconf import OmegaConf
 from typing import Any

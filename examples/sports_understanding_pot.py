@@ -7,7 +7,7 @@ makes more use of structured inputs/outputs.
 
 
 from secretagent import config, record
-from secretagent.core import interface, implement_via
+from secretagent.core import implement_via
 import secretagent.implement_pydantic  # noqa: F401 (registers simulate_pydantic factory)
 
 from pydantic import BaseModel
@@ -69,10 +69,12 @@ if __name__ == '__main__':
         pprint.pprint(rollout)
 
     # Find the generated code
-    print(f' generated code '.center(60, '-'))    
+    print(' generated code '.center(60, '-'))    
     for step in rollout:
-        if 'step_info' not in step: continue
-        if 'generated_code' not in step['step_info']: continue
+        if 'step_info' not in step:
+            continue
+        if 'generated_code' not in step['step_info']:
+            continue
         print(step['step_info']['generated_code'])
-    print(f' result '.center(60, '-'))    
+    print(' result '.center(60, '-'))    
     print(result)

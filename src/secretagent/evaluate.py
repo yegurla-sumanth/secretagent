@@ -3,7 +3,6 @@
 
 from abc import ABC, abstractmethod
 import json
-import os
 from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
@@ -40,7 +39,7 @@ class Evaluator(ABC):
         # record a run
         with record.recorder() as records:
             try:
-                predicted_output = interface(*example.input_args)
+                predicted_output = interface(*example.input_args)  # type: ignore[misc]
             except Exception as ex:
                 predicted_output = f'**exception raised**: {ex}'
         llm_usage_stats = self.aggregate_usage_stats(records)
@@ -54,7 +53,7 @@ class Evaluator(ABC):
             **metrics,
             **llm_usage_stats)
 
-    def aggregate_usage_stats(self, records: list[dict[str,Any]]) -> list[dict[str, Any]]:
+    def aggregate_usage_stats(self, records: list[dict[str,Any]]) -> dict[str, Any]:
         """Given a recorder - sum the usage statistics passed out from llm_util.
 
         The 'records' list should be created by 'with record.recorder
@@ -62,9 +61,9 @@ class Evaluator(ABC):
         key storing the llm_util statistics.  This is normally used as
         a helper function for measure().
         """
-        result = {}
-        for record in records:
-            for key, value in record['stats'].items():
+        result: dict[str, float] = {}
+        for rec in records:
+            for key, value in rec['stats'].items():
                 result[key] = result.get(key, 0.0) + value
         return result
 

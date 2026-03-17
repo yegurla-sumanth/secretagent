@@ -5,8 +5,8 @@ import pytest
 from omegaconf import OmegaConf
 
 from secretagent import config, record
-from secretagent.core import interface, all_factories, all_interfaces, _INTERFACES
-from secretagent.implement_core import PoTFactory, resolve_tools
+from secretagent.core import interface, all_factories, _INTERFACES
+from secretagent.implement_core import PoTFactory
 
 
 @pytest.fixture(autouse=True)

@@ -61,13 +61,6 @@ def _get_dirs(ctx: typer.Context, latest: int = 1, check: Optional[list[str]] = 
     return dirs
 
 
-def _load_config(d: Path) -> dict:
-    """Load config.yaml from an experiment directory."""
-    cfg_path = d / 'config.yaml'
-    if not cfg_path.exists():
-        return {}
-    return OmegaConf.to_container(OmegaConf.load(cfg_path), resolve=True)
-
 
 @app.command('list', context_settings=_EXTRA_ARGS)
 def list_experiments(
@@ -128,7 +121,7 @@ def pair(
         row = {
             '_comparison': f'{fua} vs {fub}',
             'n': n}
-        for m in metric:
+        for m in (metric or []):
             t, p = scipy_stats.ttest_rel(joined[f'{m}_a'], joined[f'{m}_b'])
             row[f'{m}_t'] = t
             row[f'{m}_p'] = p
@@ -144,7 +137,7 @@ def compare_configs(
 ):
     """Show configuration differences between experiments."""
     dirs = _get_dirs(ctx, latest=latest, check=check)
-    ctr = Counter()
+    ctr: Counter[str] = Counter()
     all_pairs = {}
     for d in dirs:
         cfg = config.load_yaml_cfg(d / 'config.yaml')

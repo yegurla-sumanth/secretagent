@@ -2,9 +2,10 @@
 """
 
 import time
+from typing import Any
 
 from secretagent import config
-from secretagent.cache_util import cached, clear_all_caches
+from secretagent.cache_util import cached
 from litellm import completion, completion_cost
 
 def echo_boxed(text: str, tag:str = ''):
@@ -16,7 +17,7 @@ def echo_boxed(text: str, tag:str = ''):
         print('│ ' + line.ljust(width) + ' │')
     print('└' + '─' * (width + 2) + '┘')
 
-def _llm_impl(prompt: str, model: str) -> tuple[str, dict[str,...]]:
+def _llm_impl(prompt: str, model: str) -> tuple[str, dict[str, Any]]:
   """Use an LLM model.
 
   Returns result as a string plus a dictionary of measurements,
@@ -48,7 +49,7 @@ def _llm_impl(prompt: str, model: str) -> tuple[str, dict[str,...]]:
   )
   return model_output, stats
 
-def llm(prompt: str, model: str) -> tuple[str, dict[str,...]]:
+def llm(prompt: str, model: str) -> tuple[str, dict[str, Any]]:
   """Use an LLM model, with optional cachier caching via config.
 
   See cache_util.py for why this weird process is necessary.

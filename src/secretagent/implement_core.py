@@ -11,7 +11,7 @@ import re
 from string import Template
 from textwrap import dedent
 from smolagents.local_python_executor import LocalPythonExecutor
-from typing import Callable
+from typing import Any, Callable
 import types
 
 from secretagent import config, llm_util, record
@@ -23,7 +23,7 @@ def _load_template(name: str) -> Template:
     """Load a prompt template from the prompt_templates directory."""
     return Template((PROMPT_TEMPLATE_DIR / name).read_text())
 
-def resolve_dotted(name: str) -> Callable:
+def resolve_dotted(name: str) -> Any:
     """Resolve a dotted name like 'module.func' to the actual object.
     """
     parts = name.split('.')
@@ -53,6 +53,8 @@ def resolve_tools(interface: Interface, tools) -> list[Callable]:
         if isinstance(tool, str):
             resolved.append(resolve_dotted(tool))
         elif isinstance(tool, Interface):
+            if tool.implementation is None:
+                raise ValueError(f'Interface {tool.name!r} has no implementation')
             resolved.append(tool.implementation.implementing_fn)
         else:
             resolved.append(tool)
@@ -244,7 +246,7 @@ class PoTFactory(Implementation.Factory):
             for tool_interface in tool_interfaces
             ])
         if additional_authorized_imports:
-            imports = '\n' + join(
+            imports = '\n' + '\n'.join(
                 ['You may use these packages:\n'] + 
                 [f'import {package}'
                  for package in additional_authorized_imports]

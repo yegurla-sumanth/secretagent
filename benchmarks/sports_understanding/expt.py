@@ -28,8 +28,7 @@ from typing import Any
 import typer
 
 from secretagent import record, config
-from secretagent.core import Interface, implement_via_config
-from secretagent import implement_pydantic # force registry of simulate_pydantic factory
+from secretagent.core import implement_via_config
 from secretagent.dataset import Dataset, Case
 from secretagent.evaluate import Evaluator
 #

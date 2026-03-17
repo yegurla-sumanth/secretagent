@@ -112,7 +112,6 @@ def test_sanity_check_no_warning_on_valid_key():
 
 def test_sanity_check_warns_on_unknown_key():
     cfg = OmegaConf.create({"llm": {"model": "claude"}})
-    import warnings
     with pytest.warns(match="unexpected config key"):
         config.sanity_check("test", ["llm.nonexistent=foo"], cfg)
 

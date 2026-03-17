@@ -1,7 +1,5 @@
-import json
 import pytest
 import pandas as pd
-from pathlib import Path
 
 from omegaconf import OmegaConf
 from typer.testing import CliRunner

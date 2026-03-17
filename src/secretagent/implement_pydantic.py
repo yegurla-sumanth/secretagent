@@ -15,7 +15,7 @@ from pydantic_ai_litellm import LiteLLMModel
 from litellm import cost_per_token
 
 from secretagent import config, record
-from secretagent.cache_util import cached, clear_all_caches
+from secretagent.cache_util import cached
 from secretagent.core import Interface, register_factory
 from secretagent.implement_core import SimulateFactory, resolve_tools
 from secretagent.llm_util import echo_boxed
