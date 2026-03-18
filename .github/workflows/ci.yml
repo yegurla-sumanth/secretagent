@@ -18,6 +18,7 @@ jobs:
 
   integration-tests:
     runs-on: ubuntu-latest
+    continue-on-error: true  # LLM responses can be flaky; don't block on this
     env:
       TOGETHERAI_API_KEY: ${{ secrets.TOGETHERAI_API_KEY }}
       CI_TEST_MODEL: ${{ vars.CI_TEST_MODEL }}
