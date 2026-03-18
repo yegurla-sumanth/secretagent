@@ -52,3 +52,22 @@ compare:
 
 costs:
 	uv run python -m secretagent.cli.costs llm_cache
+
+#
+# collecting data for experiments with learning
+#
+
+RECORD_OPTS = dataset.split=train evaluate.record_details=true evaluate.result_dir=recordings
+
+record_pot:
+	uv run expt.py run evaluate.expt_name=pot \
+	  ptools.are_sports_in_sentence_consistent.method=program_of_thought \
+	  ptools.are_sports_in_sentence_consistent.tools=[ptools.analyze_sentence,ptools.sport_for,ptools.consistent_sports] \
+	  $(RECORD_OPTS)
+
+record_react:
+	uv run expt.py run evaluate.expt_name=react \
+	  ptools.are_sports_in_sentence_consistent.method=simulate_pydantic \
+	  ptools.are_sports_in_sentence_consistent.tools=[ptools.analyze_sentence,ptools.sport_for,ptools.consistent_sports] \
+	  $(RECORD_OPTS)
+

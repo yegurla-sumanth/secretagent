@@ -6,16 +6,16 @@ Example CLI commands:
     uv run python expt.py run
 
     # run first 6 examples only
-    uv run python expt.py run --n 6
+    uv run python expt.py run dataset.n=6
 
     # override model and experiment name
-    uv run python expt.py run --model gpt-4o --expt-name gpt4o_test
+    uv run python expt.py run llm.model=gpt-4o evaluate.expt_name=gpt4o_test
 
     # use a different config file
     uv run python expt.py run --config-file conf/ablation.yaml
 
-    # override dataset split
-    uv run python expt.py run --split test
+    # record detailed results with rollouts
+    uv run python expt.py run evaluate.record_details=true dataset.n=6
 """
 
 import json
@@ -29,9 +29,10 @@ import typer
 
 from secretagent import record, config
 from secretagent.core import implement_via_config
-from secretagent import implement_pydantic # force registration
+import secretagent.implement_pydantic  # noqa: F401 (registers simulate_pydantic factory)
 from secretagent.dataset import Dataset, Case
 from secretagent.evaluate import Evaluator
+
 #
 # tools are the tools and interfaces
 #
@@ -71,6 +72,31 @@ def load_dataset(split: str) -> Dataset:
         )
 
 #
+# shared setup logic
+#
+
+_EXTRA_ARGS = {"allow_extra_args": True, "allow_interspersed_args": False}
+
+def setup(ctx: typer.Context, config_file: Path | None = None):
+    """Load config, dataset, and configure ptools.
+
+    Returns (dataset, interface) ready for evaluation.
+    """
+    if config_file is None:
+        config_file = Path(__file__).parent / 'conf' / 'conf.yaml'
+    config.configure(yaml_file=config_file, dotlist=ctx.args)
+    config.set_root(Path(__file__).parent)
+
+    dataset = load_dataset(config.require('dataset.split')).configure(
+        shuffle_seed=config.get('dataset.shuffle_seed'),
+        n=config.get('dataset.n') or None  # don't pass in 0
+        )
+    print('dataset is', dataset.summary())
+
+    implement_via_config(ptools, config.require('ptools'))
+    return dataset, ptools.are_sports_in_sentence_consistent
+
+#
 # machinery to support using this file as a CLI
 #
 
@@ -84,69 +110,37 @@ def callback():
     rather than collapsing a single subcommand to the top level.
     """
 
-CONFIG_DIR = Path(__file__).parent / 'conf'
-
-@app.command(context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
-def run(ctx: typer.Context, expt_name: str = typer.Option(None, help="Set evaluate.expt_name")):
+@app.command(context_settings=_EXTRA_ARGS)
+def run(ctx: typer.Context,
+        config_file: Path = typer.Option(None, help="Config YAML file")):
     """Run sports understanding evaluation.
 
     Extra args are parsed as config overrides in dot notation, e.g.:
         uv run python expt.py run llm.model=gpt-4o cachier.enable_caching=false
     """
+    dataset, interface = setup(ctx, config_file)
 
-    #
-    # load the config parameters
-    #
-
-    # configure with conf/conf.yaml plus any command-line args
-    config_file =  Path(__file__).parent / 'conf' / 'conf.yaml'
-    config.configure(yaml_file=config_file, dotlist=ctx.args)
-
-    # make the cache_dir and etc be relative to this directory
-    config.set_root(Path(__file__).parent)
-
-    # load the dataset, following the config
-    dataset = load_dataset(config.require('dataset.split')).configure(
-        shuffle_seed=config.get('dataset.shuffle_seed'),
-        n=config.get('dataset.n') or None  # don't pass in 0
-        )
-    print('dataset is', dataset.summary())
-
-    # configure the ptools
-    implement_via_config(ptools, config.require('ptools'))
-
-    # run the evaluation
     evaluator = SportsUnderstandingEvaluator()
-    csv_path = evaluator.evaluate(dataset, ptools.are_sports_in_sentence_consistent)
+    csv_path = evaluator.evaluate(dataset, interface)
 
     # print a summary
     df = pd.read_csv(csv_path)
     print(df)
     print()
-    print(df[['correct','latency','cost']].mean())
+    print(df.select_dtypes(include='number').mean())
 
-@app.command(context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
-def quick_test(ctx: typer.Context, expt_name: str = typer.Option(None, help="Set evaluate.expt_name")):
+
+@app.command(context_settings=_EXTRA_ARGS)
+def quick_test(ctx: typer.Context,
+               config_file: Path = typer.Option(None, help="Config YAML file")):
     """Do a quick test of a configuration.
 
     Configures and loads data as in the run command, but just runs the
     top-level interface on a single example, tracing as much as
     possible.
     """
-    config_file =  Path(__file__).parent / 'conf' / 'conf.yaml'
-    config.configure(yaml_file=config_file, dotlist=ctx.args)
-    config.set_root(Path(__file__).parent)
+    dataset, interface = setup(ctx, config_file)
     pprint.pprint(config.GLOBAL_CONFIG)
-
-    # load the dataset, following the config
-    dataset = load_dataset(config.require('dataset.split')).configure(
-        shuffle_seed=config.get('dataset.shuffle_seed'),
-        n=config.get('dataset.n') or None  # don't pass in 0
-        )
-    print('dataset is', dataset.summary())
-
-    # configure the ptools
-    implement_via_config(ptools, config.require('ptools'))
 
     input_args = dataset.cases[0].input_args
     print('input_args', input_args)
@@ -155,10 +149,12 @@ def quick_test(ctx: typer.Context, expt_name: str = typer.Option(None, help="Set
             echo={
                 'service': True, 'llm_input': True, 'llm_output': True, 'code_eval_input': True, 'code_eval_output': True}):
         with record.recorder() as records:
-            predicted_output = ptools.are_sports_in_sentence_consistent(*input_args)
+            predicted_output = interface(*input_args)
 
     print('predicted output', predicted_output)
     pprint.pprint(records)
+
+
 
 if __name__ == '__main__':
     app()
