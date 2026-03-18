@@ -1,0 +1,32 @@
+# Use Together AI (set TOGETHERAI_API_KEY or TOGETHER_API_KEY)
+llm:
+  model: together_ai/deepseek-ai/DeepSeek-V3.1
+
+cachier:
+  cache_dir: llm_cache
+
+evaluate:
+  result_dir: results
+  expt_name: DEFAULT
+  entry_point: calendar_scheduling
+  prompt_trace: false  # set true to save prompt_trace.jsonl for inspection
+
+dataset:
+  split: calendar
+  shuffle_seed: 42
+  prompt_mode: 5shot
+  n: 4
+  # Stratified sampling (same as AgentProject): 50 cal, 50 meet, 48 trip
+  stratified: false
+  sample_n: 50
+  sample_seed: 42
+
+ptools:
+  extract_constraints:
+    method: simulate
+  solve_problem:
+    method: simulate
+  format_answer:
+    method: simulate
+  calendar_scheduling:
+    method: DEFAULT
