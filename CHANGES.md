@@ -2,7 +2,7 @@
 
 ## Documentation and examples
 
-In `benchmarks/sports_understanding` is an example of avaluating untrained
+In `benchmarks/sports_understanding` is an example of evaluating untrained
 models for a simple task, with docs in `benchmarks/HOWTO.md`.
 
 
