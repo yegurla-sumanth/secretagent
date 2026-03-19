@@ -24,7 +24,7 @@ def test_workflow():
         result = su.sports_understanding_workflow('Kobe Bryant scored a layup')
         assert result
 
-        result = su.sports_understanding_workflow('Santi Cazorla scored a touchdown')
+        result = su.sports_understanding_workflow('LeBron James scored a touchdown')
         assert not result
 
 @needs_api_key
