@@ -51,6 +51,17 @@ class SimulateFactory(Implementation.Factory):
         {"input_args": ["Bam Adebayo scored a reverse layup."], "expected_output": ["Bam Adebayo", "scored a reverse layup", ""]}
       ]
     }
+
+    If you were to configuring with a yaml file you would use:
+
+    ptools:
+      sport_for:
+        method: simulate
+        example_file: examples/examples.json
+      analyze_sentence:
+        method: simulate
+        example_file: examples/examples.json
+
     """
     def build_fn(self, interface: Interface, example_file=None, **prompt_kw) -> Callable:
         examples_cases = None
