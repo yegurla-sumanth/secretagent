@@ -1,6 +1,6 @@
 # L2: Distilled — try Python calculator, fallback to LLM simulate
 llm:
-  model: together_ai/Qwen/Qwen2.5-7B-Instruct-Turbo
+  model: together_ai/Qwen/Qwen3.5-9B
 
 cachier:
   cache_dir: llm_cache
