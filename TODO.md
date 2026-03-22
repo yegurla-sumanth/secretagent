@@ -9,10 +9,18 @@
      information from the stack trace
    * move expt.py into core
 
+## In-context examples for simulate factory.
+
+No easy way to do this - Jerry Yan on it
+
+## Simplify expt.py
+
+Assuming data splits in BENCHMARK/data/split.json as a serialized Dataset.
+
 ## CLI improvements
- 
+
   * results.py validate [--require xxx] [--purge] ...
-  * results.py delete-obsolete 
+  * results.py delete-obsolete
 
 ## Caching
 
@@ -24,7 +32,36 @@
  * Run experiments in sports_understanding
      * use smaller models till the task gets "interesting"?
 
+## Learning methods
+
+Start with distilling react traces.
+
+Add a src/secretagent/learn subdirectory
+
+Add learn/baselines.py
+  RoteLearner(prob_threshold)
+   - report estimated coverage and accuracy
+   - return the learned code as a loadable python function
+ Test this on the zero-shot post process and `consistent_sports`
+
+Add a learn/distill_pot.py
+ * takes every pot function for every example
+ * uses simulated interfaces to convert to a 'canonical' functional form
+   "def workflow(...) -> ..."
+ * uses ast to rename all the variables to v01, v02, ...
+ * hashes them to get a smaller set of functions
+ * computes coverage of each function (correct/incorrect)
+ * does some sort of greedy set cover
+ * incrementally calls a simulated interface to refactor the workflows
+   into one program
+
 ## Code quality/etc
 
  * More guidance for claude/devs on defense programming
  * Standardize implement strategies: [un]structured_baseline, pot, workflow, react
+
+## Known issues
+
+ * Running the simulate_pydantic with tools leads to a bunch of
+   litellm task warnings, which are meaningless but annoying and
+   seemingly hard to fix.

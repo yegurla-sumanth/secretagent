@@ -35,7 +35,7 @@ zeroshot_unstructured:
 	  ptools.are_sports_in_sentence_consistent.fn=ptools.zeroshot_unstructured_workflow
 
 #
-# View results of past experiments
+# Summarize results of past experiments
 #
 
 list:
@@ -52,3 +52,38 @@ compare:
 
 costs:
 	uv run python -m secretagent.cli.costs llm_cache
+
+#
+# Learning is a pipeline, documented below  
+#
+
+# 1) 'record' detailed traces of an implementation strategy, put them in recordings
+#    Recordings are just like evaluations but keep some extra information around.
+#
+
+RECORD_OPTS = dataset.split=train evaluate.record_details=true evaluate.result_dir=recordings
+
+record_workflow:
+	uv run expt.py run evaluate.expt_name=workflow \
+	  ptools.are_sports_in_sentence_consistent.method=direct \
+	  ptools.are_sports_in_sentence_consistent.fn=ptools.sports_understanding_workflow \
+	  $(RECORD_OPTS)	
+
+# 2) Then run the learner - right now that's a rote learner - for some
+# interface.  A learner loads the recordings and saves stuff to a
+# training directory, train-dir, in this case filed under
+# consistent_sports__rote
+
+learn_consistent_sports:
+	uv run python -m secretagent.cli.learn --interface consistent_sports --train-dir training recordings/*
+
+# 3) Now we can configure the learned implementation 
+
+evaluate_learned_consistent_sports:
+	uv run expt.py run evaluate.expt_name=workflow_with_learning \
+	  learn.train_dir=training \
+	  ptools.consistent_sports.method=learned \
+	  ptools.consistent_sports.learner=rote \
+	  ptools.consistent_sports.backoff=True \
+	  ptools.are_sports_in_sentence_consistent.method=direct \
+	  ptools.are_sports_in_sentence_consistent.fn=ptools.sports_understanding_workflow

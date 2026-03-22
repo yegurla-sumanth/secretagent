@@ -77,6 +77,7 @@ This project is heavily configuration-driven, like most ML systems.
  * `echo.call` — print function call signatures (used by EchoFactory)
  * `evaluate.expt_name` — name tag for the experiment (used in result filenames and dataframes)
  * `evaluate.result_dir` — directory to save results CSV and config YAML snapshot
+ * `evaluate.record_details` — if `True`, include full rollout recordings in JSONL output (default `False`)
  * `cachier.enable_caching` — if `False`, bypass cachier entirely (default `True`)
  * `cachier.cache_dir` — directory for cachier's on-disk cache
  * Other `cachier.*` keys are passed through to `@cachier()` (e.g. `stale_after`, `allow_none`)

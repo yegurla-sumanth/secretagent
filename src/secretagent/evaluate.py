@@ -35,6 +35,9 @@ class Evaluator(ABC):
 
     def measure(self, example: Case, interface: Interface) -> dict[str, Any]:
         """Measure performance on a case.
+
+        If evaluate.record_details is True, includes the full rollout
+        (recorder output) under the 'rollout' key.
         """
         # record a run
         with record.recorder() as records:
@@ -47,11 +50,14 @@ class Evaluator(ABC):
         metrics = self.compare_predictions(
             predicted_output, example.expected_output)
         # merge all the metrics and records together
-        return dict(
+        result = dict(
             predicted_output=predicted_output,
             expected_output=example.expected_output,
             **metrics,
             **llm_usage_stats)
+        if config.get('evaluate.record_details'):
+            result['rollout'] = records
+        return result
 
     def aggregate_usage_stats(self, records: list[dict[str,Any]]) -> dict[str, Any]:
         """Given a recorder - sum the usage statistics passed out from llm_util.
@@ -90,13 +96,17 @@ class Evaluator(ABC):
             for row in self.measurements(dataset, interface):
                 row.update(expt_name=expt_name)
                 try:
-                    fp.write(json.dumps(row) + '\n')
+                    fp.write(json.dumps(row, default=str) + '\n')
                     results.append(row)
                 except TypeError:
                     warnings.warn(f'discarded row that cannot be serialized {row}')
-                    
-        # also save as CSV for easy loading
-        df = pd.DataFrame(results).set_index('case_name')
+
+        # also save as CSV for easy loading (drop rollout column if present)
+        csv_rows = [
+            {k: v for k, v in row.items() if k != 'rollout'}
+            for row in results
+        ]
+        df = pd.DataFrame(csv_rows).set_index('case_name')
         df.to_csv(csv_path)
         print(f'saved in {csv_path}')
         return csv_path
