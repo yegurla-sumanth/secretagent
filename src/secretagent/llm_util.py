@@ -38,10 +38,25 @@ def _llm_impl(prompt: str, model: str) -> tuple[str, dict[str, Any]]:
   response = completion(
     model=model,
     messages=messages,
+    stream=False,
     **completion_kw
   )
   latency = time.time() - start_time
-  model_output = response.choices[0].message.content
+  msg = response.choices[0].message
+  content = msg.content or ''
+  reasoning = getattr(msg, 'reasoning_content', None) or ''
+  # For thinking models (e.g. Qwen3.5), the answer may appear in
+  # reasoning_content rather than content.  Prefer content if it has
+  # answer markers; fall back to reasoning_content if content is empty
+  # or lacks the markers.
+  if content and ('<answer>' in content or 'ANSWER' in content
+                  or '```python' in content):
+    model_output = content
+  elif reasoning and ('<answer>' in reasoning or 'ANSWER' in reasoning
+                      or '```python' in reasoning):
+    model_output = reasoning
+  else:
+    model_output = content or reasoning
 
   if config.get('echo.llm_output'):
     echo_boxed(model_output, 'llm_output')
