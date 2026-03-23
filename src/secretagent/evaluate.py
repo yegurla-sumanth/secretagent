@@ -110,3 +110,10 @@ class Evaluator(ABC):
         df.to_csv(csv_path)
         print(f'saved in {csv_path}')
         return csv_path
+
+
+class ExactMatchEvaluator(Evaluator):
+    """Evaluator that scores 1.0 for exact match, 0.0 otherwise."""
+
+    def compare_predictions(self, predicted_output, expected_output) -> dict[str, Any]:
+        return dict(correct=float(predicted_output == expected_output))

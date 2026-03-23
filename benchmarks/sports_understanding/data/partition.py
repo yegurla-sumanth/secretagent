@@ -1,13 +1,30 @@
-"""partition data.json into train/valid/test
+"""partition data.json into train/valid/test as json-serialized Datasets
 """
 
 import json
 import random
+import re
 
-def save_data(filename, canary, examples):
-    obj = dict(canary=canary, examples=examples)
+from secretagent.dataset import Dataset, Case
+
+
+def example_as_case(index, split, example):
+    return Case(
+        name=f'{split}.{index:03d}',
+        input_args=(re.search(r'"([^"]*)"', example['input']).group(1),),
+        expected_output=(example['target'] == "yes"),
+    )
+
+
+def save_dataset(filename, split, canary, examples):
+    dataset = Dataset(
+        name='sports_understanding',
+        split=split,
+        metadata={'canary': canary},
+        cases=[example_as_case(i, split, ex) for i, ex in enumerate(examples)],
+    )
     with open(filename, 'w') as fp:
-        json.dump(obj, fp, indent=2)
+        fp.write(dataset.model_dump_json(indent=2))
     print(f'wrote {len(examples)} to {filename}')
 
 
@@ -18,6 +35,6 @@ if __name__ == '__main__':
         examples = data['examples']
         random.seed(137)
         random.shuffle(examples)
-        save_data('test.json', canary, examples[:100])
-        save_data('train.json', canary, examples[100:175])
-        save_data('valid.json', canary, examples[175:])
+        save_dataset('test.json', 'test', canary, examples[:100])
+        save_dataset('train.json', 'train', canary, examples[100:175])
+        save_dataset('valid.json', 'valid', canary, examples[175:])
