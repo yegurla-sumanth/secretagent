@@ -1,3 +1,4 @@
+import warnings
 import pytest
 import pandas as pd
 
@@ -85,7 +86,9 @@ def test_list_latest_default(two_expts):
 
 def test_list_no_results(tmp_path):
     # A nonexistent path raises ValueError (no config.yaml)
-    result = runner.invoke(app, ['list', str(tmp_path / 'nonexistent')])
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', UserWarning)
+        result = runner.invoke(app, ['list', str(tmp_path / 'nonexistent')])
     assert result.exit_code != 0
 
 
