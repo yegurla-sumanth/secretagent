@@ -97,6 +97,7 @@ def average(
     for path, df in zip(dirs, dfs):
         df['path'] = [str(path)] * len(df)
     result = pd.concat(dfs).groupby('path')[metric].agg(['mean', 'sem'])
+    result = result.sort_values((metric[0], 'mean'), ascending=False)
     print(result)
 
 
@@ -107,7 +108,7 @@ def pair(
     check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
     metric: Optional[list[str]] = typer.Option(None, help='Metrics to pair'),
 ):
-    """Run paired t-tests on a metric and latency across experiments."""
+    """Run paired t-tests across experiments."""
     if not metric:
         raise ValueError('At least one --metric is required for paired comparison')
     dirs = _get_dirs(ctx, latest=latest, check=check)
@@ -200,6 +201,32 @@ def validate(
             for d in bad_dirs:
                 shutil.rmtree(d)
                 print(f'  deleted {d}')
+
+
+@app.command(context_settings=_EXTRA_ARGS)
+def delete_obsolete(
+    ctx: typer.Context,
+    latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
+    check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
+):
+    """Delete experiment directories not retained by filter_paths."""
+    all_dirs = {Path(p) for p in ctx.args if Path(p).is_dir()}
+    keep = set(savefile.filter_paths(ctx.args, latest=latest, dotlist=check or []))
+    to_delete = sorted(all_dirs - keep)
+    if not to_delete:
+        print('Nothing to delete.')
+        return
+    print('Keeping:')
+    for d in sorted(keep):
+        print(f'  {d}')
+    print(f'\nWill delete {len(to_delete)} directories:')
+    for d in to_delete:
+        print(f'  {d}')
+    answer = input('Proceed? [y/N] ')
+    if answer.strip().lower() == 'y':
+        for d in to_delete:
+            shutil.rmtree(d)
+            print(f'  deleted {d}')
 
 
 @app.callback()
