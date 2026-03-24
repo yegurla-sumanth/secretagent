@@ -1,13 +1,12 @@
-# Tasks
+# Tasks/Known bugs
 
 ## Core issues
 
  * non-primitive types don't work with Simulate
-   * problem is output validation
-   * should at least give warnings
+   * problem is output validation, should at least give warnings
    * when errors are caught by evaluator's, should _record relevant
      information from the stack trace
-   * move expt.py into core
+ * move expt.py into core/cli
 
 ## Learning
 
@@ -17,15 +16,6 @@
 ## In-context examples for simulate factory.
 
 Should document as another learning approach.
-
-## Simplify expt.py
-
-Assuming data splits in BENCHMARK/data/split.json as a serialized Dataset.
-
-## CLI improvements
-
-  * results.py validate [--require xxx] [--purge] ...
-  * results.py delete-obsolete
 
 ## Caching
 

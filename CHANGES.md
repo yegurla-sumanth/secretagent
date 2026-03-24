@@ -1,3 +1,68 @@
+# Upcoming Changes - March 23
+
+I cleaned up some of the result.py cli methods and fixed a few small
+bugs.  CLI.md now summarizes the implemented cli operations.
+
+Some folks asked about where this project is going with learning and
+optimization.  Here's the end goal for the system as I see it now
+(thanks to the folks that discussed this with me today!)
+
+## The search space
+
+The end goal is to search a space of potential agents for a task.  The
+space is defined by a set of Interfaces, and potential Implementations
+that can bd bound to these interfaces, as well as other options (like
+`llm.model` which can be set for any individual implementation.)
+
+**Status:** now we can specify any element in that space with a config
+file.  We want to be able to specify the space itself as well, which
+might look something like this:
+
+```
+ptools:
+  analyze_sentence:
+    method: [simulate, simulate_pydantic]
+	llm.model: 
+	 - together_ai/deepseek-ai/DeepSeek-V3.1
+     - together_ai/openai/gpt-oss-20b
+     - together_ai/Qwen/Qwen3.5-9B
+  sport_for:
+    method: [simulate, simulate_pydantic]
+  ...
+```
+
+## Searching the space
+
+We will add some methods for searching the space under
+`src/secretagent/optimize`, presumably based on existing MODO
+(multi-objective discrete optimization) packages.  These methods will
+take a search space and find a set of Pareto-optimal configs.
+
+To search the space, we need to evaluate a config with respect to
+metrics we care about (for now, `correctness` and `cost`).  We can do
+this now with CLI tools.
+
+## Extending the space
+
+We will build out the `src/secretagent/learn` package with other ways
+of learning and combining implementations.  The first step will be to
+run learning methods manually with CLI tools, and the next step will
+be to implement some methods that look at the current Pareto-optimal
+configs and suggest learning ops for specific implementations.
+
+## Overview of the process
+
+The final process should look like this.
+
+ * Initialize the space with some interfaces and strategies, like
+   ReAct and PoT
+ * Using the training and validation sets:
+   * **repeat** until convergence or budget is exhausted
+     * search for Pareto-optimal configs
+     * run one or more learning operations to expand the search space
+ * Test the Pareto-optimal configs on the test set
+
+
 # Changes - March 22
 
 There is a very simple and barely-tested example of a learner now, in
