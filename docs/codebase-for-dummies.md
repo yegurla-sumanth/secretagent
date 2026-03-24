@@ -1,5 +1,7 @@
 # Secretagent: Codebase for Dummies
 
+*Accurate as of commit `10c9bd9` (2026-03-23). Refresh periodically as the codebase evolves.*
+
 A complete zero-to-hero guide to the secretagent framework. No prior knowledge assumed.
 
 ---
