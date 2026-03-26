@@ -4,6 +4,7 @@ from typing import Optional
 import typer
 
 from secretagent.learn.baselines import RoteLearner
+from secretagent.learn.examples import extract_examples
 
 app = typer.Typer()
 _EXTRA_ARGS = {"allow_extra_args": True, "allow_interspersed_args": False}
@@ -20,8 +21,40 @@ def rote(
     check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
     train_dir: str = typer.Option('/tmp/rote_train', help='Directory to store collected data'),
 ):
+    """Learn a rote (lookup-based) implementation from recorded calls."""
     learner = RoteLearner(interface_name=interface, train_dir=train_dir)
     learner.learn([Path(a) for a in ctx.args], latest=latest, check=check)
+
+
+@app.command(context_settings=_EXTRA_ARGS)
+def examples(
+    ctx: typer.Context,
+    output: str = typer.Option('examples.json', help='Output JSON file path'),
+    interface: Optional[list[str]] = typer.Option(None, help='Interface names to extract (repeatable)'),
+    only_correct: bool = typer.Option(True, help='Only include examples from correct predictions'),
+    max_per_interface: Optional[int] = typer.Option(None, help='Max examples per interface'),
+    latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
+    check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
+):
+    """Extract in-context examples from recorded rollouts.
+
+    Collects successful input/output traces and saves them in the JSON
+    format expected by SimulateFactory's example_file parameter.
+
+    Example::
+
+        uv run -m secretagent.cli.learn examples results/* --output examples.json
+    """
+    extract_examples(
+        dirs=[Path(a) for a in ctx.args],
+        output_file=output,
+        interfaces=interface,
+        only_correct=only_correct,
+        max_per_interface=max_per_interface,
+        latest=latest,
+        check=check,
+    )
+
 
 if __name__ == '__main__':
     app()
