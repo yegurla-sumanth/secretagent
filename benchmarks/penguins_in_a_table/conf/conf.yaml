@@ -1,0 +1,25 @@
+llm:
+  model: claude-haiku-4-5-20251001
+
+cachier:
+  cache_dir: llm_cache
+
+evaluate:
+  result_dir: results
+  expt_name: DEFAULT # means the expt isn't fully configured and should be discarded
+
+dataset:
+  split: valid
+  shuffle_seed: 137
+
+ptools:
+  analyze_input:
+    method: simulate
+  table_operation:
+    method: simulate
+  answer_question:
+    method: simulate
+  choose_response:
+    method: simulate
+  answer_penguin_question:
+    method: DEFAULT #should raise an error

@@ -1,0 +1,37 @@
+llm:
+  model: claude-haiku-4-5-20251001
+
+cachier:
+  cache_dir: llm_cache
+
+evaluate:
+  result_dir: results
+  expt_name: DEFAULT # means the expt isn't fully configured and should be discarded
+
+dataset:
+  split: valid
+  shuffle_seed: 137
+
+ptools:
+  extract_path:
+    method: simulate_pydantic
+  extract_options:
+    method: simulate_pydantic
+  explain_path:
+    method: simulate_pydantic
+  decompose_path:
+    method: simulate_pydantic
+  summarize_decomposed_path:
+    method: simulate_pydantic
+  summary_matches_option:
+    method: simulate_pydantic
+  compute_length_clusters:
+    method: simulate_pydantic
+  relate_length_clusters_to_option:
+    method: simulate_pydantic
+  length_clusters_match_option:
+    method: simulate_pydantic
+  is_unique_answer:
+    method: simulate_pydantic
+  identify_shape:
+    method: DEFAULT #should raise an error
