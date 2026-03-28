@@ -83,7 +83,13 @@ class RuleArenaEvaluator(Evaluator):
         else:
             correct = float(_within_tolerance(predicted_output, expected_output))
             correct_tolerance = float(_isclose_match(predicted_output, expected_output))
-        return dict(correct=correct, correct_tolerance=correct_tolerance)
+        if predicted_output is None:
+            failure_mode = "extraction_failure"
+        elif correct:
+            failure_mode = "none"
+        else:
+            failure_mode = "calculation_error"
+        return dict(correct=correct, correct_tolerance=correct_tolerance, failure_mode=failure_mode)
 
 
 # ---------------------------------------------------------------------------

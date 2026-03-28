@@ -349,7 +349,7 @@ def _build_nba_query(problem_text: str, rules_text: str, metadata: dict) -> str:
 
     return (
         f"Reference Rules in NBA Collective Bargaining Agreement:\n\n"
-        f"{rules_text[:6000]}\n\n"
+        f"{rules_text}\n\n"
         f"{_NBA_ASSUMPTIONS}\n"
         f"Decide whether any operation by any team violates the rules:\n\n"
         f"{question}"
@@ -412,7 +412,7 @@ def l1_extract_workflow(
     """
     metadata = json.loads(metadata_json)
     if domain == "airline":
-        query = f"RULES:\n{rules_text[:3000]}\n\nQUERY:\n{problem_text}"
+        query = f"RULES:\n{rules_text}\n\nQUERY:\n{problem_text}"
         params = extract_airline_params(query)
         return float(_airline_calc_fn(params))
 
