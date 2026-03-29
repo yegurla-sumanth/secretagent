@@ -34,10 +34,10 @@ uv run -m secretagent.cli.results list DIRS... [--latest K] [--check KEY=VALUE]
 Report mean +/- stderr of metrics, grouped by experiment.
 
 ```
-uv run -m secretagent.cli.results average DIRS... [--latest K] [--check KEY=VALUE] [--metric NAME]
+uv run -m secretagent.cli.results average DIRS... [--latest K] [--check KEY=VALUE] [--metric NAME] [--pareto]
 ```
 
-Default metric is `cost`. Multiple `--metric` flags are supported.
+Default metric is `cost`. Multiple `--metric` flags are supported. Append `-` to a metric name to indicate it should be minimized (e.g. `--metric cost-`); by default metrics are maximized. Use `--pareto` to show only Pareto-optimal experiments.
 
 ### pair
 
@@ -47,7 +47,22 @@ Run paired t-tests on metrics across experiments (requires at least 2 experiment
 uv run -m secretagent.cli.results pair DIRS... [--latest K] [--check KEY=VALUE] --metric NAME
 ```
 
-At least one `--metric` is required.
+At least one `--metric` is required. Metric names may have a `-` suffix (stripped before lookup).
+
+### plot
+
+Plot experiments as points on two metrics with error boxes.
+
+```
+uv run -m secretagent.cli.results plot DIRS... [--latest K] [--check KEY=VALUE] --metric NAME --metric NAME [--pareto] [--output FILE]
+```
+
+Exactly two `--metric` options are required. Each experiment is rendered as a point at (mean_metric1, mean_metric2) with a rectangle showing +/- 1 stderr. Pareto-optimal experiments are marked with stars; others with circles. Use `--pareto` to show only Pareto-optimal experiments.
+
+| Option | Default | Description |
+|---|---|---|
+| `--output` | `results_plot.png` | Output PNG file path |
+| `--pareto` | `false` | Only show Pareto-optimal experiments |
 
 ### compare-configs
 
@@ -81,6 +96,10 @@ uv run -m secretagent.cli.results delete-obsolete DIRS... [--latest K] [--check 
 
 Lists directories to keep and delete, then prompts for confirmation.
 
+### Metric direction
+
+Any `--metric` flag across `average`, `pair`, and `plot` can have a `-` suffix to indicate the metric should be minimized rather than maximized (e.g. `--metric cost-`). This affects Pareto optimality calculations and sort order.
+
 ### Common options
 
 | Option | Default | Description |
@@ -88,6 +107,33 @@ Lists directories to keep and delete, then prompts for confirmation.
 | `--latest K` | 1 | Keep latest K directories per tag; 0 for all |
 | `--check KEY=VALUE` | — | Config constraint filter (repeatable) |
 | `--config-file FILE` | — | YAML config file to load |
+
+## secretagent.cli.expt
+
+Generic benchmark experiment runner. Run from a benchmark directory that contains `conf/conf.yaml`, a `data/` subdirectory, and a `ptools` module.
+
+### run
+
+Run a benchmark evaluation.
+
+```
+uv run python -m secretagent.cli.expt run --interface MODULE.NAME [--evaluator MODULE.CLASS] [DOTLIST_OVERRIDES...]
+```
+
+| Option | Description |
+|---|---|
+| `--interface` | (required) Top-level interface as `module.name`, e.g. `ptools.my_fn` |
+| `--evaluator` | Evaluator class as `module.ClassName` (default: `ExactMatchEvaluator`) |
+
+Extra args are parsed as config overrides in dot notation.
+
+### quick-test
+
+Run the top-level interface on a single example with full tracing.
+
+```
+uv run python -m secretagent.cli.expt quick-test --interface MODULE.NAME [DOTLIST_OVERRIDES...]
+```
 
 ## secretagent.cli.optimize
 
