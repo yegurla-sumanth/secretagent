@@ -1,13 +1,15 @@
 # Tasks/Known bugs
 
+## cli/results.pi export results/*
+
 ## Cleanups
 
  * subprocess out of optimizer
  * cleanup learn/examples.py, and traces.py
    - It should be a Learner
    - maybe a Learner should output an implementation config? that's more general
- * create implementation subdirectory
-   * check learn/optimize subdirs?
+   - need to add filtering for iscorrect examples
+ * make orchestrate a Learner
 
 ## Core issues
 
@@ -15,13 +17,6 @@
    * problem is output validation, should at least give warnings
    * when errors are caught by evaluator's, should _record relevant
      information from the stack trace
-
-## Learning
-
- * You can't filter cases used for distillation in any way - by
-   verifiable rewards is an obvious one.
-
- * Should set up in-context examples as another learning approach.
 
 ## Caching
 
@@ -52,7 +47,6 @@ Add a learn/distill_pot.py
 
 ## Code quality/etc
 
- * Some typehints fail
  * More guidance for claude/devs on defense programming
  * Standardize implement strategies: [un]structured_baseline, pot, workflow, react
 

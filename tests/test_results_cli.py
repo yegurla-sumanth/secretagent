@@ -6,7 +6,9 @@ from omegaconf import OmegaConf
 from typer.testing import CliRunner
 
 from secretagent import config
-from secretagent.cli.results import app
+from secretagent.cli.results import (
+    app, parse_metric, parse_metrics, paired_result_df, find_pareto_optimal,
+)
 
 
 runner = CliRunner()
@@ -176,3 +178,140 @@ def test_config_file_option(two_expts, tmp_path):
                            + _dirs_as_args(two_expts))
     assert result.exit_code == 0
     assert 'baseline' in result.output
+
+
+# --- parse_metric / parse_metrics tests ---
+
+def test_parse_metric_maximize():
+    assert parse_metric('correct') == ('correct', True)
+
+def test_parse_metric_minimize():
+    assert parse_metric('cost-') == ('cost', False)
+
+def test_parse_metrics_mixed():
+    names, directions = parse_metrics(['correct', 'cost-', 'latency-'])
+    assert names == ['correct', 'cost', 'latency']
+    assert directions == {'correct': True, 'cost': False, 'latency': False}
+
+
+# --- paired_result_df tests ---
+
+def test_paired_result_df_columns(two_expts):
+    d1, d2 = two_expts
+    dfs = [pd.read_csv(d / 'results.csv') for d in [d1, d2]]
+    df = paired_result_df([d1, d2], dfs, ['correct', 'cost'])
+    assert 'expt_a' in df.columns
+    assert 'expt_b' in df.columns
+    assert 'correct_t' in df.columns
+    assert 'correct_p' in df.columns
+    assert 'cost_t' in df.columns
+    assert 'cost_p' in df.columns
+    assert len(df) == 1  # one pair
+
+
+def test_paired_result_df_zero_variance(tmp_path):
+    """When a metric is identical across experiments, report t=0, p=1."""
+    d1 = _make_expt(tmp_path, '20260101.120000.a', 'a',
+                    {'llm': {'model': 'x'}},
+                    [{'correct': 1, 'cost': 0.01},
+                     {'correct': 1, 'cost': 0.01}])
+    d2 = _make_expt(tmp_path, '20260102.120000.b', 'b',
+                    {'llm': {'model': 'y'}},
+                    [{'correct': 1, 'cost': 0.02},
+                     {'correct': 1, 'cost': 0.02}])
+    dfs = [pd.read_csv(d / 'results.csv') for d in [d1, d2]]
+    df = paired_result_df([d1, d2], dfs, ['correct'])
+    assert df.iloc[0]['correct_t'] == 0.0
+    assert df.iloc[0]['correct_p'] == 1.0
+
+
+# --- find_pareto_optimal tests ---
+
+@pytest.fixture
+def three_expts(tmp_path):
+    """Three experiments with clear separations for significance.
+
+    best:  correct=1.0, cost=0.01  (perfect, cheap)
+    mid:   correct=0.5, cost=0.50  (middling)
+    worst: correct=0.0, cost=1.00  (bad, expensive)
+    Using 8 samples with no variance so t-tests are clearly significant.
+    """
+    best = _make_expt(tmp_path, '20260101.120000.best', 'best',
+                      {'llm': {'model': 'a'}},
+                      [{'correct': 1, 'cost': 0.01}] * 8)
+    mid = _make_expt(tmp_path, '20260102.120000.mid', 'mid',
+                     {'llm': {'model': 'b'}},
+                     [{'correct': 1, 'cost': 0.50}] * 4
+                     + [{'correct': 0, 'cost': 0.50}] * 4)
+    worst = _make_expt(tmp_path, '20260103.120000.worst', 'worst',
+                       {'llm': {'model': 'c'}},
+                       [{'correct': 0, 'cost': 1.00}] * 8)
+    return best, mid, worst
+
+
+def test_find_pareto_all_maximize(three_expts):
+    """With both metrics maximized, worst has highest cost so nobody dominates it."""
+    dirs = list(three_expts)
+    dfs = [pd.read_csv(d / 'results.csv') for d in dirs]
+    pair_df = paired_result_df(dirs, dfs, ['correct', 'cost'])
+    optimal = find_pareto_optimal(pair_df, ['correct', 'cost'])
+    assert len(optimal) == 3
+
+
+def test_find_pareto_with_minimize(three_expts):
+    """With correct maximized and cost minimized, best dominates others."""
+    dirs = list(three_expts)
+    dfs = [pd.read_csv(d / 'results.csv') for d in dirs]
+    pair_df = paired_result_df(dirs, dfs, ['correct', 'cost'])
+    directions = {'correct': True, 'cost': False}
+    optimal = find_pareto_optimal(pair_df, ['correct', 'cost'], directions=directions)
+    assert 'best' in optimal
+    assert 'worst' not in optimal
+
+
+def test_find_pareto_tradeoff(tmp_path):
+    """Two experiments with a tradeoff: neither dominates the other."""
+    accurate = _make_expt(tmp_path, '20260101.120000.accurate', 'accurate',
+                          {'llm': {'model': 'a'}},
+                          [{'correct': 1, 'cost': 0.10},
+                           {'correct': 1, 'cost': 0.10},
+                           {'correct': 1, 'cost': 0.10},
+                           {'correct': 1, 'cost': 0.10}])
+    cheap = _make_expt(tmp_path, '20260102.120000.cheap', 'cheap',
+                       {'llm': {'model': 'b'}},
+                       [{'correct': 0, 'cost': 0.001},
+                        {'correct': 0, 'cost': 0.001},
+                        {'correct': 0, 'cost': 0.001},
+                        {'correct': 1, 'cost': 0.001}])
+    dirs = [accurate, cheap]
+    dfs = [pd.read_csv(d / 'results.csv') for d in dirs]
+    pair_df = paired_result_df(dirs, dfs, ['correct', 'cost'])
+    directions = {'correct': True, 'cost': False}
+    optimal = find_pareto_optimal(pair_df, ['correct', 'cost'], directions=directions)
+    assert 'accurate' in optimal
+    assert 'cheap' in optimal
+
+
+# --- average --pareto tests ---
+
+def test_average_pareto_flag(three_expts):
+    result = runner.invoke(app, ['average', '--latest', '0', '--pareto',
+                                  '--metric', 'correct', '--metric', 'cost-']
+                           + _dirs_as_args(three_expts))
+    assert result.exit_code == 0
+    # Only best (correct=1.0, cost=0.01) should survive pareto filtering.
+    # worst (correct=0.0, cost=1.0) should be eliminated.
+    lines = result.output.strip().split('\n')
+    # Header lines + 1 data row (best only)
+    data_lines = [l for l in lines if '0.' in l and 'mean' not in l and 'sem' not in l]
+    assert len(data_lines) == 1
+    assert '0.01' in data_lines[0]  # best's cost
+
+
+# --- pair with minimize suffix ---
+
+def test_pair_strips_suffix(two_expts):
+    result = runner.invoke(app, ['pair', '--latest', '0', '--metric', 'cost-']
+                           + _dirs_as_args(two_expts))
+    assert result.exit_code == 0
+    assert 'cost_t' in result.output
