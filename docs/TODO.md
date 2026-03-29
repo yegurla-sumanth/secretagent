@@ -2,9 +2,12 @@
 
 ## Cleanups
 
- * move expt.py into cli and take subprocess out of optimizer
- * create bbh benchmarks with subtasks
+ * subprocess out of optimizer
+ * cleanup learn/examples.py, and traces.py
+   - does it follow the same interface as learn?
+   - maybe a Learner should output an implementation config? that's more general
  * create implementation subdirectory
+   * check learn/optimize subdirs?
  * organize tests into core and benchmark tests
    * integration tests seem very slow! maybe it's just the first time though?
 
@@ -14,7 +17,6 @@
    * problem is output validation, should at least give warnings
    * when errors are caught by evaluator's, should _record relevant
      information from the stack trace
- * move expt.py into core/cli
 
 ## Learning
 
