@@ -16,18 +16,25 @@ class Learner(ABC):
 
     The constructor collects training data from recording directories,
     saves provenance info to a working directory, and loads the Dataset.
-    Subclasses implement fit(), save_code(), and report().
+    Subclasses implement fit(), save_implementation(), and report().
     """
 
     def __init__(self, interface_name: str, train_dir: str, file_under: str):
         self.interface_name = interface_name
         self.train_dir = train_dir
         self.file_under = file_under
-        to_produce = ['data.json', 'sources.txt', 'source_configs', 'learned.py']
+        # default files to produce
+        to_produce = ['data.json', 'sources.txt', 'source_configs', 'implementation.yaml']
         savefile_names = savefile.filename_list(train_dir, to_produce, file_under)
         self.out_dir = Path(savefile_names[0]).parent
         self.created_files = {short:full for short,full in zip(to_produce, savefile_names)}
 
+
+    def produce_files(self, additional_files: list[str]):
+        """Register other files to produce
+        """
+        for filename in additional_files:
+            self.created_files[filename] = Path(self.out_dir / filename)
 
     @abstractmethod
     def fit(self) -> "Learner":
@@ -35,7 +42,7 @@ class Learner(ABC):
         ...
 
     @abstractmethod
-    def save_code(self) -> Path:
+    def save_implementation(self) -> Path:
         """Write learned implementation to self.out_dir. Return path to the file."""
         ...
 
@@ -50,7 +57,7 @@ class Learner(ABC):
         self.collect_distillation_data(dirs, latest, check)
         print(f'collected {len(self.dataset.cases)} examples in working directory {self.out_dir}')
         self.fit()
-        output_file = self.save_code()
+        output_file = self.save_implementation()
         print(self.report())
         print(f'saved output to {output_file}')
 

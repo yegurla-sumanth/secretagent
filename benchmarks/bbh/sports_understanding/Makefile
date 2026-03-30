@@ -81,18 +81,18 @@ record_workflow:
 
 # 2) Then run the learner - right now that's a rote learner - for some
 # interface.  A learner loads the recordings and saves stuff to a
-# training directory, train-dir, in this case filed under
+# training directory, learned-dir, in this case to be filed under
 # consistent_sports__rote
 
 learn_consistent_sports:
-	uv run python -m secretagent.cli.learn rote --interface consistent_sports --train-dir training recordings/*
+	uv run python -m secretagent.cli.learn rote --interface consistent_sports --learned-dir learned recordings/*
 
 # 3) Now we can configure the learned implementation 
 
 evaluate_learned_consistent_sports:
 	uv run python -m secretagent.cli.expt run --interface ptools.are_sports_in_sentence_consistent evaluate.expt_name=workflow_with_learning \
-	  learn.train_dir=training \
-	  ptools.consistent_sports.method=learned \
+	  learn.train_dir=learned \
+	  ptools.consistent_sports.method=learned_code \
 	  ptools.consistent_sports.learner=rote \
 	  ptools.consistent_sports.backoff=True \
 	  ptools.are_sports_in_sentence_consistent.method=direct \

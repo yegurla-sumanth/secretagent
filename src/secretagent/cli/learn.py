@@ -20,10 +20,10 @@ def rote(
     interface: str = typer.Option(..., help="Interface name to extract, e.g. 'consistent_sports'"),
     latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
     check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
-    train_dir: str = typer.Option('/tmp/rote_train', help='Directory to store collected data'),
+    learned_dir: str = typer.Option('/tmp/rote_train', help='Directory to store collected data'),
 ):
     """Learn a rote (lookup-based) implementation from recorded calls."""
-    learner = RoteLearner(interface_name=interface, train_dir=train_dir)
+    learner = RoteLearner(interface_name=interface, train_dir=learned_dir)
     learner.learn([Path(a) for a in ctx.args], latest=latest, check=check)
 
 

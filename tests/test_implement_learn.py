@@ -3,7 +3,7 @@ from omegaconf import OmegaConf
 
 from secretagent import config
 from secretagent.core import interface, _FACTORIES
-from secretagent.learn.implement_learn import (
+from secretagent.implement.learnedcode import (
     _find_learned_path, _build_backoff_impl, LearnedFunctionFactory,
 )
 

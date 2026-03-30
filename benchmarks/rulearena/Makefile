@@ -100,12 +100,12 @@ record_l1_airline:
 
 learn_extract_airline:
 	uv run python -m secretagent.cli.learn rote --interface extract_airline_params \
-	  --train-dir training recordings/*
+	  --learned-dir training recordings/*
 
 evaluate_learned_l1_airline:
 	uv run expt.py run evaluate.expt_name=l1_airline_learned dataset.domain=airline \
 	  learn.train_dir=training \
-	  ptools.extract_airline_params.method=learned \
+	  ptools.extract_airline_params.method=learned_code \
 	  ptools.extract_airline_params.learner=rote \
 	  ptools.extract_airline_params.backoff=True \
 	  ptools.compute_rulearena_answer.method=direct \

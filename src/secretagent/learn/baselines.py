@@ -7,6 +7,8 @@ import textwrap
 from collections import Counter, defaultdict
 from pathlib import Path
 
+import yaml
+
 from secretagent.learn.base import Learner
 
 
@@ -25,10 +27,12 @@ class RoteLearner(Learner):
     """
 
     def __init__(self, interface_name, train_dir):
+        self.tag = 'rote'
         super().__init__(
             interface_name=interface_name,
             train_dir=train_dir,
-            file_under=f'{interface_name}__rote')
+            file_under=f'{interface_name}__{self.tag}')
+        self.produce_files(['learned.py'])
 
     def fit(self) -> Learner:
         """Compute the most common output for each input."""
@@ -50,15 +54,16 @@ class RoteLearner(Learner):
         self.counts = counts
         return self
 
-    def save_code(self) -> Path:
-        """Write a learned.py file with a function that returns the most common output.
+    def save_implementation(self) -> Path:
+        """Write an implementation that uses a learned.py file with a
+        function that returns the most common output.
 
         The generated function accepts *args, **kw and looks up the input
         in a precomputed dict, returning the most common output or None.
         """
         hashable_src = inspect.getsource(_make_hashable)
-        outpath = Path(self.created_files['learned.py'])
-        outpath.write_text(
+        learned_outpath = Path(self.created_files['learned.py'])
+        learned_outpath.write_text(
             f'"""Auto-generated rote-learned implementation for {self.interface_name}."""\n\n'
             f'{hashable_src}\n'
             f'_MOST_COMMON_OUTPUT = {pprint.pformat(self._most_common_output)}\n\n'
@@ -68,7 +73,13 @@ class RoteLearner(Learner):
             f'    return _MOST_COMMON_OUTPUT.get((args_key, kw_key))\n',
             encoding='utf-8',
         )
-        return outpath
+        impl_outpath = Path(self.created_files['implementation.yaml'])
+        impl = {self.interface_name: {
+            'method': 'learned_code',
+            'learner': self.tag,
+            'backoff': 'true'}}
+        impl_outpath.write_text(yaml.dump(impl))
+        return impl_outpath
 
     def report(self) -> str:
         """Brief report on likely rote-learning performance.

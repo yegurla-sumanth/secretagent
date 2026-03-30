@@ -61,7 +61,7 @@ def _build_backoff_impl(interface, workdir):
     return factory.build_implementation(interface, **factory_kws)
 
 
-class LearnedFunctionFactory(Implementation.Factory):
+class LearnedCodeFactory(Implementation.Factory):
     """Load a learned implementation from a training directory.
 
     At build time, finds the most recent timestamped directory matching
@@ -74,8 +74,8 @@ class LearnedFunctionFactory(Implementation.Factory):
     function returns None.
 
     Examples:
-      foo.implement_via('learned', learner='rote')
-      foo.implement_via('learned', learner='rote', backoff=True)
+      foo.implement_via('learned_code', learner='rote')
+      foo.implement_via('learned_code', learner='rote', backoff=True)
     """
 
     def build_fn(self, interface: Interface, learner: str,  # type: ignore[override]
@@ -97,4 +97,4 @@ class LearnedFunctionFactory(Implementation.Factory):
             return result
         return learned_with_backoff
 
-register_factory('learned', LearnedFunctionFactory())
+register_factory('learned_code', LearnedCodeFactory())
