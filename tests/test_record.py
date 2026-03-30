@@ -4,12 +4,10 @@ from secretagent import record
 
 @pytest.fixture(autouse=True)
 def reset_recording_state():
-    """Reset recording globals before each test."""
-    record.RECORDING = False
-    record.RECORD = []
+    """Reset recording state for the test thread before/after each test."""
+    record.reset_thread_state()
     yield
-    record.RECORDING = False
-    record.RECORD = []
+    record.reset_thread_state()
 
 
 # --- recorder() context manager ---
@@ -30,11 +28,10 @@ def test_recorder_clears_record_on_exit():
     with record.recorder() as rec:
         record.record(func="foo", args=(1,))
         assert len(rec) == 1
-    assert record.RECORD == []
+    assert record.RECORDING is False
 
 
-def test_recorder_clears_previous_records():
-    record.RECORD = [{"func": "stale"}]
+def test_recorder_starts_fresh():
     with record.recorder() as rec:
         assert rec == []
 
@@ -68,6 +65,19 @@ def test_record_preserves_arbitrary_kwargs():
         assert rec[0] == {"x": 1, "y": "two", "z": [3]}
 
 
-def test_yielded_list_is_same_object_as_global():
+def test_yielded_list_collects_appended_entries():
     with record.recorder() as rec:
-        assert rec is record.RECORD
+        record.record(func="x", args=())
+        assert len(rec) == 1
+        assert rec[0]["func"] == "x"
+
+
+def test_nested_recorder_isolation():
+    with record.recorder() as outer:
+        record.record(func="outer1", args=())
+        with record.recorder() as inner:
+            record.record(func="inner", args=())
+            assert len(inner) == 1
+        assert [r["func"] for r in outer] == ["outer1"]
+        record.record(func="outer2", args=())
+        assert [r["func"] for r in outer] == ["outer1", "outer2"]
