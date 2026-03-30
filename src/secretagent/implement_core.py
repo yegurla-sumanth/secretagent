@@ -130,11 +130,14 @@ class SimulateFactory(Implementation.Factory):
     def parse_output(self, return_type, text):
         """Take LLM output and return the final answer, in the correct type.
         """
-        try:
-            match_result = re.search(r'<answer>(.*)</answer>', text, re.DOTALL|re.MULTILINE)
-            final_answer = match_result.group(1).strip()
-        except AttributeError:
-            raise AttributeError('cannot find final answer')
+        matches = re.findall(r'<answer>(.*?)</answer>', text, re.DOTALL|re.MULTILINE)
+        if matches:
+            final_answer = matches[-1].strip()
+        else:
+            # Fallback: LLM omitted tags; use entire output (common for raw JSON)
+            final_answer = text.strip()
+            if not final_answer:
+                raise AttributeError('cannot find final answer')
         if return_type in [int, str, float]:
             result = return_type(final_answer)
         else:

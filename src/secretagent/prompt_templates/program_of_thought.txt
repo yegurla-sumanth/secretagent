@@ -30,6 +30,12 @@ general inplementation, it only needs to work for these
 specific inputs. 
 
 $imports
+IMPORTANT: The generated code will run in a restricted sandbox.
+- Do NOT use any import statements unless packages are explicitly allowed below.
+- Avoid built-in aggregators like sum(...), map(...), filter(...).
+- Prefer explicit for-loops and simple counters/conditionals.
+- Keep the code straightforward; avoid clever one-liners.
+
 Use the following output format:
 
 $thoughts
