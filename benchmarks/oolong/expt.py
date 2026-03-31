@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from secretagent import config, record
 from secretagent.core import implement_via_config
-import secretagent.implement_pydantic  # noqa: F401
+import secretagent.implement.pydantic  # noqa: F401
 from secretagent.dataset import Dataset, Case
 from secretagent.evaluate import Evaluator
 
