@@ -66,8 +66,15 @@ This project is heavily configuration-driven, like most ML systems.
 ### Configuration keys
 
  * `llm.model` — LLM model name passed to litellm. Some useful llm.model values:
+   * `together_ai/Qwen/Qwen3.5-9B` - good value ($0.10/$0.15 per 1M tokens)
+     * doesn't support tool use, needed for pydantic-ai models
+   * `together_ai/google/gemma-3n-E4B-it` - ultra-cheap ($0.02/$0.04 per 1M tokens)
+     * doesn't support tool use, needed for pydantic-ai models
    * `claude-haiku-4-5-20251001` - quick cheap and stable, needs Anthropic API key
-   * `deepseek-v3-0324` - cheap but strong reasoning model
+   * `together_ai/deepseek-ai/DeepSeek-V3.1` - cheap but strong reasoning model, needs Together API key
+   * `together_ai/openai/gpt-oss-20b` - very cheap ($0.05/$0.20 per 1M tokens)
+   * `together_ai/openai/gpt-oss-120b` - good value, larger ($0.15/$0.60 per 1M tokens)
+   * `together_ai/Qwen/Qwen3-Next-80B-A3B-Instruct` - good value, MoE ($0.15/$1.50 per 1M tokens)
  * `llm.thinking` — if truthy, include `<thought>` scaffolding in simulate prompts
  * `echo.model` — print which model is being called
  * `echo.llm_input` — print the prompt sent to the LLM in a box
@@ -77,22 +84,10 @@ This project is heavily configuration-driven, like most ML systems.
  * `echo.call` — print function call signatures (used by EchoFactory)
  * `evaluate.expt_name` — name tag for the experiment (used in result filenames and dataframes)
  * `evaluate.result_dir` — directory to save results CSV and config YAML snapshot
+ * `evaluate.record_details` — if `True`, include full rollout recordings in JSONL output (default `False`)
  * `cachier.enable_caching` — if `False`, bypass cachier entirely (default `True`)
  * `cachier.cache_dir` — directory for cachier's on-disk cache
  * Other `cachier.*` keys are passed through to `@cachier()` (e.g. `stale_after`, `allow_none`)
-
-### Using configurations in code
-
- * By convention:
-   * Functions generally access the global config, rather than passing
-     down pieces of it as arguments. 
-   * Fail early when required parameters are missing: When a
-	 configuration parameter is needed by a subroutine, the caller
-     should access that param with 'config.require' and pass down the
-     required values as a parameter.
-   * For tests or demos that rely on configuration settings, don't
-     modify the global config.  Instead use the `with configuration`
-     context manager.
 
 ## Caching
 
@@ -102,13 +97,4 @@ other stats (e.g., input/output tokens and cost).
 
 ## CLI tools
 
-CLI tools live in `src/secretagent/cli/` and are run as modules with `uv run -m`.
-They accept `--help` for full usage. 
-
- * **costs** — summarize LLM costs from the cachier cache
-
-       # Summarize costs from a specific cache directory
-       uv run -m secretagent.cli.costs benchmarks/sports_understanding/llm_cache
-
-       # Use the configured cachier.cache_dir from a config file
-       uv run -m secretagent.cli.costs --config-file conf.yaml
+See @docs/CLI.md

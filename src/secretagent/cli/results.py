@@ -30,6 +30,7 @@ Example usage:
 """
 
 from collections import Counter
+import shutil
 import typer
 import pandas as pd
 from itertools import combinations
@@ -45,6 +46,32 @@ app = typer.Typer()
 _EXTRA_ARGS = {"allow_extra_args": True, "allow_interspersed_args": False}
 
 
+def parse_metric(spec: str) -> tuple[str, bool]:
+    """Parse a metric spec like 'cost-' into (name, maximize).
+
+    A trailing '-' means minimize; otherwise maximize.
+    """
+    if spec.endswith('-'):
+        return spec[:-1], False
+    return spec, True
+
+
+def parse_metrics(specs: list[str]) -> tuple[list[str], dict[str, bool]]:
+    """Parse a list of metric specs into (names, directions).
+
+    Returns:
+        names: list of metric column names (without '-' suffix)
+        directions: dict mapping name -> True if maximize, False if minimize
+    """
+    names = []
+    directions = {}
+    for spec in specs:
+        name, maximize = parse_metric(spec)
+        names.append(name)
+        directions[name] = maximize
+    return names, directions
+
+
 def _get_dirs(ctx: typer.Context, latest: int = 1, check: Optional[list[str]] = None) -> list[Path]:
     """Resolve experiment directories from extra CLI args.
 
@@ -55,6 +82,8 @@ def _get_dirs(ctx: typer.Context, latest: int = 1, check: Optional[list[str]] = 
     if not ctx.args:
         raise ValueError('No paths provided.')
     dirs = savefile.filter_paths(ctx.args, latest=latest, dotlist=check or [])
+    if not dirs:
+        raise ValueError('No matching experiment directories found.')
     for d in dirs:
         if not (Path(d) / 'results.csv').exists():
             raise ValueError(f'No results.csv in {d}')
@@ -85,16 +114,137 @@ def average(
         latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
         check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
         metric: Optional[list[str]] = typer.Option(None, help='Metrics to average'),
+        pareto: bool = typer.Option(False, help='Only show Pareto-optimal experiments'),
 ):
     """Report mean +/- stderr of a metric and latency, grouped by experiment."""
     if metric is None:
         metric = ['cost']
+    names, directions = parse_metrics(metric)
     dirs = _get_dirs(ctx, latest=latest, check=check)
     dfs = [pd.read_csv(d / 'results.csv') for d in dirs]
+    if pareto and len(dfs) >= 2:
+        pair_df = paired_result_df(dirs, dfs, names)
+        optimal = set(find_pareto_optimal(pair_df, names, directions=directions))
+        filtered = [(d, df) for d, df in zip(dirs, dfs)
+                     if savefile.file_under_part(d) in optimal]
+        dirs, dfs = [list(t) for t in zip(*filtered)] if filtered else ([], [])
     for path, df in zip(dirs, dfs):
         df['path'] = [str(path)] * len(df)
-    result = pd.concat(dfs).groupby('path')[metric].agg(['mean', 'sem'])
+    if not dfs:
+        print('No experiments to show.')
+        return
+    result = pd.concat(dfs).groupby('path')[names].agg(['mean', 'sem'])
+    result = result.sort_values((names[0], 'mean'), ascending=not directions.get(names[0], True))
     print(result)
+
+
+def paired_result_df(
+    dirs: list[Path],
+    dfs: list[pd.DataFrame],
+    metrics: list[str],
+) -> pd.DataFrame:
+    """Build a DataFrame of pairwise paired t-test results.
+
+    Each row compares two experiments on every metric. Columns include
+    expt_a, expt_b, n, and for each metric m: m_t and m_p.
+
+    If a metric has zero variance in both experiments (identical values),
+    reports m_t=0 and m_p=1.0 instead of NaN.
+    """
+    # Sort by mean of the first metric so comparisons read in order
+    paired = sorted(zip(dirs, dfs), key=lambda x: x[1][metrics[0]].mean(), reverse=True)
+    dirs, dfs = [list(t) for t in zip(*paired)]
+    rows = []
+    for (pa, da), (pb, db) in combinations(zip(dirs, dfs), 2):
+        fua = savefile.file_under_part(pa)
+        fub = savefile.file_under_part(pb)
+        joined = da.join(db, lsuffix='_a', rsuffix='_b', how='inner')
+        n = len(joined)
+        if n == 0:
+            continue
+        row = {
+            'expt_a': fua,
+            'expt_b': fub,
+            'n': n,
+        }
+        for m in metrics:
+            col_a, col_b = joined[f'{m}_a'], joined[f'{m}_b']
+            if (col_a == col_b).all():
+                row[f'{m}_t'] = 0.0
+                row[f'{m}_p'] = 1.0
+            else:
+                t, p = scipy_stats.ttest_rel(col_a, col_b)
+                row[f'{m}_t'] = t
+                row[f'{m}_p'] = p
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def find_pareto_optimal(
+    pair_df: pd.DataFrame,
+    metrics: list[str],
+    alpha: float = 0.05,
+    directions: dict[str, bool] | None = None,
+) -> list[str]:
+    """Return experiments that are not dominated on every metric.
+
+    An experiment x1 is dominated by x2 if for every metric m,
+    x2 is significantly better than x1 (p < alpha).  "Better" means
+    higher for maximized metrics and lower for minimized metrics.
+
+    Args:
+        directions: maps metric name -> True (maximize) or False (minimize).
+            Defaults to maximize for all metrics.
+    """
+    if directions is None:
+        directions = {m: True for m in metrics}
+
+    # Collect all experiment names
+    expts = sorted(set(pair_df['expt_a']) | set(pair_df['expt_b']))
+
+    # Index pair_df for quick lookup: (expt_a, expt_b) -> row
+    lookup = {}
+    for _, row in pair_df.iterrows():
+        lookup[(row['expt_a'], row['expt_b'])] = row
+        lookup[(row['expt_b'], row['expt_a'])] = row
+
+    dominated = set()
+    for x1 in expts:
+        for x2 in expts:
+            if x1 == x2 or x2 in dominated:
+                continue
+            key = (x2, x1)
+            if key not in lookup:
+                continue
+            row = lookup[key]
+            # Check if x2 is significantly better than x1 on every metric.
+            # t_val is from ttest_rel(x2, x1), so positive t means x2 > x1.
+            # For maximized metrics, x2 better means t > 0.
+            # For minimized metrics, x2 better means t < 0.
+            all_sig = True
+            for m in metrics:
+                if row['expt_a'] == x2:
+                    t_val = row[f'{m}_t']
+                    p_val = row[f'{m}_p']
+                else:
+                    t_val = -row[f'{m}_t']
+                    p_val = row[f'{m}_p']
+                if p_val >= alpha:
+                    all_sig = False
+                    break
+                # Check direction: for maximize, x2 better means t > 0
+                # For minimize, x2 better means t < 0
+                if directions.get(m, True) and t_val <= 0:
+                    all_sig = False
+                    break
+                if not directions.get(m, True) and t_val >= 0:
+                    all_sig = False
+                    break
+            if all_sig:
+                dominated.add(x1)
+                break
+
+    return [x for x in expts if x not in dominated]
 
 
 @app.command(context_settings=_EXTRA_ARGS)
@@ -104,30 +254,86 @@ def pair(
     check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
     metric: Optional[list[str]] = typer.Option(None, help='Metrics to pair'),
 ):
-    """Run paired t-tests on a metric and latency across experiments."""
+    """Run paired t-tests across experiments."""
+    if not metric:
+        raise ValueError('At least one --metric is required for paired comparison')
+    names, _directions = parse_metrics(metric)
     dirs = _get_dirs(ctx, latest=latest, check=check)
     dfs = [pd.read_csv(d / 'results.csv') for d in dirs]
     if len(dfs) < 2:
         raise ValueError('Need at least 2 experiments for paired comparison')
-    rows = []
-    for (pa, da), (pb, db) in combinations(zip(dirs, dfs), 2):
-        fua = savefile.file_under_part(pa)
-        fub = savefile.file_under_part(pb)
-        joined = da.join(db, lsuffix='_a', rsuffix='_b', how='inner')
-        n = len(joined)
-        if n == 0:
-            print(f"\n{pa} vs {pb}: <2 shared example_ids, skipping")
-            continue
-        row = {
-            '_comparison': f'{fua} vs {fub}',
-            'n': n}
-        for m in (metric or []):
-            t, p = scipy_stats.ttest_rel(joined[f'{m}_a'], joined[f'{m}_b'])
-            row[f'{m}_t'] = t
-            row[f'{m}_p'] = p
-        rows.append(row)
-    print(pd.DataFrame(rows))
-            
+    df = paired_result_df(dirs, dfs, names)
+    p_cols = [c for c in df.columns if c.endswith('_p')]
+    for c in p_cols:
+        df[c] = df[c].map(lambda x: f'{x:.5f}')
+    print(df)
+
+
+@app.command(context_settings=_EXTRA_ARGS)
+def plot(
+    ctx: typer.Context,
+    latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
+    check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
+    metric: Optional[list[str]] = typer.Option(None, help='Exactly two metrics to plot'),
+    pareto: bool = typer.Option(False, help='Only show Pareto-optimal experiments'),
+    output: str = typer.Option('results_plot.png', help='Output PNG file path'),
+):
+    """Plot experiments as points with error boxes on two metrics."""
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+
+    if not metric or len(metric) != 2:
+        raise ValueError('Exactly two --metric options are required for plot')
+    names, directions = parse_metrics(metric)
+    mx, my = names
+
+    dirs = _get_dirs(ctx, latest=latest, check=check)
+    dfs = [pd.read_csv(d / 'results.csv') for d in dirs]
+
+    # Compute pareto set for marker styling (even if not filtering)
+    optimal_set: set[str] = set()
+    if len(dfs) >= 2:
+        pair_df = paired_result_df(dirs, dfs, names)
+        optimal_set = set(find_pareto_optimal(pair_df, names, directions=directions))
+
+    if pareto:
+        filtered = [(d, df) for d, df in zip(dirs, dfs)
+                     if savefile.file_under_part(d) in optimal_set]
+        dirs, dfs = [list(t) for t in zip(*filtered)] if filtered else ([], [])
+
+    if not dfs:
+        print('No experiments to plot.')
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    for d, df in zip(dirs, dfs):
+        label = savefile.file_under_part(d)
+        x_mean, x_sem = df[mx].mean(), df[mx].sem()
+        y_mean, y_sem = df[my].mean(), df[my].sem()
+
+        marker = '*' if label in optimal_set else 'o'
+        msize = 12 if label in optimal_set else 6
+        ax.plot(x_mean, y_mean, marker, markersize=msize, label=label)
+        color = ax.lines[-1].get_color()
+        rect = Rectangle(
+            (x_mean - x_sem, y_mean - y_sem),
+            2 * x_sem, 2 * y_sem,
+            linewidth=1, edgecolor=color, facecolor=color, alpha=0.25,
+        )
+        ax.add_patch(rect)
+
+    ax.set_xlabel(f'{mx} ({"maximize" if directions.get(mx, True) else "minimize"})')
+    ax.set_ylabel(f'{my} ({"maximize" if directions.get(my, True) else "minimize"})')
+    ax.set_title(f'{mx} vs {my}')
+    ax.legend(fontsize=8, loc='best')
+    fig.tight_layout()
+    fig.savefig(output, dpi=150)
+    plt.close(fig)
+    print(f'Plot saved to {output}')
+
 
 @app.command(context_settings=_EXTRA_ARGS)
 def compare_configs(
@@ -152,6 +358,119 @@ def compare_configs(
         print(f'properties of {d}:')
         for p in uncommon_pairs:
             print(f'  {p}')
+
+
+_DEFAULT_REQUIRED_FILES = ['config.yaml', 'results.csv']
+
+
+@app.command(context_settings=_EXTRA_ARGS)
+def validate(
+    ctx: typer.Context,
+    latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
+    check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
+    require: Optional[list[str]] = typer.Option(None, help='Additional required files'),
+    norequire: Optional[list[str]] = typer.Option(None, help='Remove a default required file'),
+    purge: bool = typer.Option(False, help='Delete directories that fail validation'),
+):
+    """Check that experiment directories contain required files."""
+    required = set(_DEFAULT_REQUIRED_FILES)
+    for f in (require or []):
+        required.add(f)
+    for f in (norequire or []):
+        required.discard(f)
+    dirs = savefile.filter_paths(ctx.args, latest=latest, dotlist=check or [])
+    bad_dirs = []
+    for d in dirs:
+        missing = [f for f in sorted(required) if not (d / f).exists()]
+        if missing:
+            print(f'{d}: missing {", ".join(missing)}')
+            bad_dirs.append(d)
+    if not bad_dirs:
+        print('All directories OK.')
+        return
+    if purge:
+        answer = input(f'Delete {len(bad_dirs)} directories? [y/N] ')
+        if answer.strip().lower() == 'y':
+            for d in bad_dirs:
+                shutil.rmtree(d)
+                print(f'  deleted {d}')
+
+
+@app.command(context_settings=_EXTRA_ARGS)
+def delete_obsolete(
+    ctx: typer.Context,
+    latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
+    check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
+):
+    """Delete experiment directories not retained by filter_paths."""
+    all_dirs = {Path(p) for p in ctx.args if Path(p).is_dir()}
+    keep = set(savefile.filter_paths(ctx.args, latest=latest, dotlist=check or []))
+    to_delete = sorted(all_dirs - keep)
+    if not to_delete:
+        print('Nothing to delete.')
+        return
+    print('Keeping:')
+    for d in sorted(keep):
+        print(f'  {d}')
+    print(f'\nWill delete {len(to_delete)} directories:')
+    for d in to_delete:
+        print(f'  {d}')
+    answer = input('Proceed? [y/N] ')
+    if answer.strip().lower() == 'y':
+        for d in to_delete:
+            shutil.rmtree(d)
+            print(f'  deleted {d}')
+
+
+def _find_benchmarks_dir() -> Path:
+    """Walk up from cwd to find the 'benchmarks' directory."""
+    cwd = Path.cwd().resolve()
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / 'benchmarks'
+        if candidate.is_dir():
+            return candidate
+    raise ValueError('Cannot find benchmarks/ directory above cwd')
+
+
+@app.command('export', context_settings=_EXTRA_ARGS)
+def export_results(
+    ctx: typer.Context,
+    latest: int = typer.Option(1, help='Keep latest k dirs per tag; 0 for all'),
+    check: Optional[list[str]] = typer.Option(None, help='Config constraint like key=value'),
+    as_path: Optional[str] = typer.Option(None, '--as', help='Override relative path under benchmarks/results/'),
+):
+    """Copy filtered result directories to benchmarks/results/<relative_path>.
+
+    Run from a benchmark directory (e.g. benchmarks/bbh/sports_understanding).
+    Copies each filtered result directory to
+    benchmarks/results/<path_from_benchmarks>/<result_dir_name>.
+    Use --as to override the relative path.
+    """
+    dirs = _get_dirs(ctx, latest=latest, check=check)
+    benchmarks_dir = _find_benchmarks_dir()
+
+    if as_path is not None:
+        rel = Path(as_path)
+    else:
+        cwd = Path.cwd().resolve()
+        try:
+            rel = cwd.relative_to(benchmarks_dir)
+        except ValueError:
+            raise ValueError(
+                f'cwd ({cwd}) is not under benchmarks/ ({benchmarks_dir})')
+
+    dest_base = benchmarks_dir / 'results' / rel
+    dest_base.mkdir(parents=True, exist_ok=True)
+
+    for d in dirs:
+        dest = dest_base / d.name
+        if dest.exists():
+            print(f'  skipping {d.name} (already exists)')
+            continue
+        shutil.copytree(d, dest)
+        print(f'  {d} -> {dest}')
+
+    print(f'\nExported {len(dirs)} directories to {dest_base}')
 
 
 @app.callback()

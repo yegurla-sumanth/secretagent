@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "cachier>=4.1.0",
+    "datasets>=4.8.3",
     "logfire>=4.25.0",
     "litellm>=1.81.15",
     "matplotlib>=3.10.8",
@@ -29,7 +30,7 @@ dependencies = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-secretagent = ["prompt_templates/*.txt"]
+secretagent = ["prompt_templates/*.txt", "orchestrate/prompt_templates/*.txt"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -38,4 +39,5 @@ pythonpath = ["."]
 dev = [
     "mypy>=1.19.1",
     "ruff>=0.15.6",
+    "types-pyyaml>=6.0.12.20250915",
 ]

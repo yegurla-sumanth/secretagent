@@ -1,8 +1,10 @@
 # project-specific stuff
 
-benchmarks/*/llm_cache/*
-benchmarks/*/results/*
-benchmarks/*/recordings/*
+orchestrate_cache/
+results_plot.png
+benchmarks/**/training/
+docs/orchestrator_demo.html
+docs/presentation.md
 
 # emacs
 
@@ -217,3 +219,7 @@ marimo/_lsp/
 __marimo__/
 
 benchmarks/*/window_cache/
+.env
+.claude/
+.cursor/
+.codex/

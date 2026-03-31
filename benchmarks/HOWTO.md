@@ -36,39 +36,40 @@ Use `ptools.py` to define the top-level Interface for problems in this
 dataset, and any ptools that will used.  Also put hand-coded tools or
 workflows here
 
-## Setting up the experiment driver
+## Setting up the datasets
 
-`benchmarks/sports_understanding/expt.py` is an example.  You need to
+In `data/` write code to build three datasets, `train.json`,
+`valid.json`, and `test.json`.  Each of these is a json-serialized  
+`Dataset` object.
 
- * define how to evaluate responses, by subclassing
-   evaluate.Evaluator.  The minimal implementation computes one metric
-   by comparing the predicted_output and expected_output.
- * define a way to load the dataset - in the example, there's a
-   load_dataset(split) function.  This needs to include an example
-   id (example.name) for each example, the list of inputs that will
-   be passed to the top-level Interface, and an expected output
-   for those inputs.
- * define how to run an experiment, which needs to perform these steps:
-   * load the shared configuration from conf/conf.yaml, and any any
-   experiment-specific configuration params from the command line.
-	* One necessary experiment-specific config is
-      'evaluate.expt_name', which is where the results of the
+
+## Setting up the experiments
+
+You can probably use `secretagent/cli/expt.py`.  Look at
+`benchmarks/bbh/sports_understanding/Makefile` for examples of how to
+call it.  Each experiment will load the shared configuration from
+conf/conf.yaml, and any any experiment-specific configuration params
+from the command line.  Things that must be passed in include:
+    * the top-level interface, passed in as `--interface glob` to expt.py
+	* optionally the classname of the `Evaluator` you will use, which
+      defaults to checking for an exact match between predicted and
+      expected outputs.
+       * If you dont use exact match evaluate responses, you need to
+	     subclass evaluate.Evaluator, and pass that in as `--evaluator
+	     foo`.  A minimal subclass implementation computes one metric
+	     by comparing the `predicted_output` and `expected_output`.
+
+Configs that must be passed in include:
+	* `evaluate.expt_name`, which is where the results of the
       evaluation will be filed.
-    * You will also probably need to bind the top-level interface to
-      an implementation for each experiment.
-    * The shared config params should include the result directory and
-	  the cache directory.
- * load the dataset 
- * configure implementations for all the ptools, using implement_via_config
- * create an instance of your custom Evaluator and run
-   evaluator.evaluate(dataset, <top-level-interface>)
+    * implementations for all the ptools (if they are not the default
+	  specified in the shared config)
 
 ## Viewing results
 
  * To see the most recent experiment for every expt_name, run
    * `uv run python -m secretagent.cli.results average --metric <YOUR METRIC> --metric cost results/*`
  * Other options for the `cli.results` tool are
-   * `average` - show average values for each expt_name
    * `pair` - run paired tests (the p values should be < 0.05 for differences to be significant)
    * `compare` - review the config options that differ in the selected runs
 
@@ -81,3 +82,18 @@ Multiple `--check` args can be used to check multiple values.
 
 The argument `--latest k` means to consider the `k` most recent
 directories for each expt_name, instead of the single most recent one.
+
+## Exporting results
+
+When you are ready to share results of your experiments, use the `export` subcommand of results.
+
+```
+uv run -m secretagent.cli.results export [--latest K] [--check KEY=VALUE] [--as RELATIVE_PATH] DIRS...
+```
+
+When you run this from a directory like
+`benchmarks/bbh/sports_understanding` it will copy the results you
+specify into `benchmarks/results/bbh/sports_understanding`, where
+`benchmarks/results` will be tracked in git.  If you're not organizing
+your problems as `benchmarks/TASK/SUBTASK` then you can use `--as
+TASK/SUBTASK` to specify where they will be copied to.

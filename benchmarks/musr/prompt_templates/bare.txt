@@ -1,5 +1,0 @@
-$narrative
-
-$question
-
-$choices
