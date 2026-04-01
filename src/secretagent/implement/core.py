@@ -146,6 +146,10 @@ class SimulateFactory(Implementation.Factory):
                 except _json.JSONDecodeError:
                     return ast.literal_eval(candidate)
 
+        # For str return type without <answer> tags, return the raw text
+        if return_type is str:
+            return text.strip()
+
         raise AttributeError('cannot find final answer')
 
 
