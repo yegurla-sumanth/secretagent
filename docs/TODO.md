@@ -2,12 +2,14 @@
 
 ## Cleanups
 
- * move subprocess out of optimizer
+ * move subprocess out of optimizer and use expt
  * cleanup learn/examples.py, and traces.py
    - It should be a Learner
    - maybe a Learner should output an implementation config? that's more general
    - need to add filtering for iscorrect examples
  * make orchestrate a Learner
+ * should check if rulearena tests drop's stuff in results_dir or not
+ * should move common LLM values out of CLAUDE.me
 
 ## Core issues/bugs
 
