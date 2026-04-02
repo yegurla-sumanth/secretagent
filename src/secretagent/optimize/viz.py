@@ -36,8 +36,8 @@ def plot_pareto_frontier(
                 break
         frontier_mask.append(not dominated)
 
-    frontier = [(l, a, c) for (l, a, c), on in zip(results, frontier_mask) if on]
-    dominated = [(l, a, c) for (l, a, c), on in zip(results, frontier_mask) if not on]
+    frontier = [(lb, a, c) for (lb, a, c), on in zip(results, frontier_mask) if on]
+    dominated = [(lb, a, c) for (lb, a, c), on in zip(results, frontier_mask) if not on]
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
