@@ -5,6 +5,7 @@ Provides DirectFactory, SimulateFactory, PromptLLMFactory, and PoTFactory.
 
 import ast
 import importlib
+import json
 import pathlib
 import re
 
@@ -12,7 +13,8 @@ from string import Template
 from textwrap import dedent
 from smolagents.local_python_executor import LocalPythonExecutor, BASE_PYTHON_TOOLS
 from typing import Any, Callable
-import types
+
+from pydantic import Field
 
 from secretagent import config, llm_util, record
 from secretagent.core import Interface, Implementation, register_factory, all_interfaces
@@ -26,13 +28,18 @@ class DirectFactory(Implementation.Factory):
 
     Example: foo.implement_via('direct', pyfn_implementing_foo)
     """
-    def build_fn(self, interface: Interface, fn: Callable | str | None = None, **_kw) -> Callable:
+    direct_fn: Any = None
+
+    def setup(self, fn: Callable | str | None = None, **_kw):
         if isinstance(fn, str):
-            return resolve_dotted(fn)
+            self.direct_fn = resolve_dotted(fn)
         elif fn is not None:
-            return fn
+            self.direct_fn = fn
         else:
-            return interface.func
+            self.direct_fn = self.bound_interface.func
+
+    def __call__(self, *args, **kw):
+        return self.direct_fn(*args, **kw)
 
 class SimulateFactory(Implementation.Factory):
     """Simulate a function call with an LLM.
@@ -63,27 +70,29 @@ class SimulateFactory(Implementation.Factory):
         example_file: examples/examples.json
 
     """
-    def build_fn(self, interface: Interface, example_file=None, **prompt_kw) -> Callable:
-        examples_cases = None
+    examples_cases: list | None = None
+    prompt_kw: dict = Field(default_factory=dict)
+
+    def setup(self, example_file=None, **prompt_kw):
+        self.prompt_kw = prompt_kw
         if example_file:
-            import json
             data = json.loads(pathlib.Path(example_file).read_text())
-            examples_cases = data.get(interface.name, [])
-        def result_fn(*args, **kw):
-            with config.configuration(**prompt_kw):
-                prompt = self.create_prompt(interface, *args, examples=examples_cases, **kw)
-                llm_output, stats = llm_util.llm(
-                    prompt, config.require('llm.model'))
-                try:
-                    return_type = interface.annotations.get('return', str)
-                    answer = self.parse_output(return_type, llm_output)
-                except Exception as ex:
-                    record.record(func=interface.name, args=args, kw=kw,
-                                  output=f'**exception**: {ex}', stats=stats)
-                    raise
-                record.record(func=interface.name, args=args, kw=kw, output=answer, stats=stats)
-                return answer
-        return result_fn
+            self.examples_cases = data.get(self.bound_interface.name, [])
+
+    def __call__(self, *args, **kw):
+        interface = self.bound_interface
+        with config.configuration(**self.prompt_kw):
+            prompt = self.create_prompt(interface, *args, examples=self.examples_cases, **kw)
+            llm_output, stats = llm_util.llm(prompt, self.llm_model)
+            try:
+                return_type = interface.annotations.get('return', str)
+                answer = self.parse_output(return_type, llm_output)
+            except Exception as ex:
+                record.record(func=interface.name, args=args, kw=kw,
+                              output=f'**exception**: {ex}', stats=stats)
+                raise
+            record.record(func=interface.name, args=args, kw=kw, output=answer, stats=stats)
+            return answer
 
     def create_prompt(self, interface, *args, examples=None, **kw):
         """Construct a prompt that calls an LLM to predict the output of the function.
@@ -114,15 +123,15 @@ class SimulateFactory(Implementation.Factory):
         bare {...} / [...] object in the output — handles models that don't
         follow the tag format for complex types.
         """
-        import json as _json
+        import json
         match_result = re.search(r'<answer>(.*)</answer>', text, re.DOTALL|re.MULTILINE)
         if match_result:
             final_answer = match_result.group(1).strip()
             if return_type in [int, str, float]:
                 return return_type(final_answer)
             try:
-                return _json.loads(final_answer)
-            except _json.JSONDecodeError:
+                return json.loads(final_answer)
+            except json.JSONDecodeError:
                 return ast.literal_eval(final_answer)
 
         # Fallback for dict/list: extract JSON from the raw output
@@ -142,15 +151,15 @@ class SimulateFactory(Implementation.Factory):
                 candidate = text[start:end + 1].strip() if start != -1 and end != -1 else ''
             if candidate:
                 try:
-                    return _json.loads(candidate)
-                except _json.JSONDecodeError:
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
                     return ast.literal_eval(candidate)
 
         # For str return type without <answer> tags, return the raw text
         if return_type is str:
             return text.strip()
 
-        raise AttributeError('cannot find final answer')
+        raise ValueError('cannot find final answer')
 
 
 class PromptLLMFactory(Implementation.Factory):
@@ -174,37 +183,40 @@ class PromptLLMFactory(Implementation.Factory):
             Defaults to r'<answer>(.*)</answer>'. If None and the
             return type is str, the full LLM output is returned.
     """
-    def build_fn(self, interface: Interface,
-                 prompt_template_str=None,
-                 prompt_template_file=None,
-                 answer_pattern=r'<answer>(.*)</answer>',
-                 **prompt_kw) -> Callable:
+    template: Any = None
+    answer_pattern: str | None = None
+    prompt_kw: dict = Field(default_factory=dict)
+
+    def setup(self, prompt_template_str=None, prompt_template_file=None,
+              answer_pattern=r'<answer>(.*)</answer>', **prompt_kw):
         if (prompt_template_str is None) == (prompt_template_file is None):
             raise ValueError(
                 'Exactly one of prompt_template_str or prompt_template_file must be given')
         if prompt_template_file is not None:
             prompt_template_str = pathlib.Path(prompt_template_file).read_text()
-        template = Template(dedent(prompt_template_str))
+        self.template = Template(dedent(prompt_template_str))
+        self.answer_pattern = answer_pattern
+        self.prompt_kw = prompt_kw
 
-        def result_fn(*args, **kw):
-            with config.configuration(**prompt_kw):
-                arg_names = list(interface.annotations.keys())[:-1]
-                arg_dict = dict(zip(arg_names, args))
-                arg_dict.update(kw)
-                prompt = template.substitute(arg_dict)
-                llm_output, stats = llm_util.llm(
-                    prompt, config.require('llm.model'))
-                try:
-                    return_type = interface.annotations.get('return', str)
-                    answer = _extract_answer(return_type, llm_output, answer_pattern)
-                except Exception as ex:
-                    record.record(func=interface.name, args=args, kw=kw,
-                                  output=f'**exception**: {ex}', stats=stats)
-                    raise
+    def __call__(self, *args, **kw):
+        interface = self.bound_interface
+        with config.configuration(**self.prompt_kw):
+            arg_names = list(interface.annotations.keys())[:-1]
+            arg_dict = dict(zip(arg_names, args))
+            arg_dict.update(kw)
+            prompt = self.template.substitute(arg_dict)
+            llm_output, stats = llm_util.llm(
+                prompt, self.llm_model)
+            try:
+                return_type = interface.annotations.get('return', str)
+                answer = _extract_answer(return_type, llm_output, self.answer_pattern)
+            except Exception as ex:
                 record.record(func=interface.name, args=args, kw=kw,
-                              output=answer, stats=stats)
-                return answer
-        return result_fn
+                              output=f'**exception**: {ex}', stats=stats)
+                raise
+            record.record(func=interface.name, args=args, kw=kw,
+                          output=answer, stats=stats)
+            return answer
 
 
 def _extract_answer(return_type, text, answer_pattern):
@@ -233,72 +245,76 @@ class PoTFactory(Implementation.Factory):
                         tools=[bar, baz],
                         additional_imports=['numpy'])
     """
-    def build_fn(
-            self,
-            interface: Interface,
-            tools='__all__',
-            additional_imports: list[types.ModuleType] | None = None,
-            inject_args: bool = False,
-            **prompt_kw
-    ) -> Callable:
+    python_executor: Any = None
+    tool_interfaces: list = Field(default_factory=list)
+    additional_imports: Any = None
+    inject_args: bool = False
+    prompt_kw: dict = Field(default_factory=dict)
+
+    def setup(self, tools='__all__', additional_imports=None, inject_args=False, **prompt_kw):
+        interface = self.bound_interface
+        self.prompt_kw = prompt_kw
+        self.additional_imports = additional_imports
+        self.inject_args = inject_args
         resolved_tools = resolve_tools(interface, tools)
         tool_functions = {fn.__name__: fn for fn in resolved_tools}
-        python_executor = LocalPythonExecutor(
+        self.python_executor = LocalPythonExecutor(
             additional_authorized_imports=(additional_imports or []),
             )
         # Put tool functions in custom_tools directly, since
         # LocalPythonExecutor.__call__ passes custom_tools (not
         # additional_functions) to evaluate_python_code.
-        python_executor.custom_tools = tool_functions
+        self.python_executor.custom_tools = tool_functions
         # Merge smolagents' BASE_PYTHON_TOOLS (len, list, dict, sorted,
         # etc.) into static_tools so generated code can use standard
         # builtins. Previously these were blocked because static_tools
         # was overwritten with only final_answer (issue #7).
-        python_executor.static_tools = {
+        self.python_executor.static_tools = {
             **BASE_PYTHON_TOOLS,
             "final_answer": lambda x: x,
         }
         # collect interfaces for tool stubs in the prompt
-        tool_interfaces = [
+        self.tool_interfaces = [
             iface for iface in all_interfaces()
             if iface is not interface
             and iface.implementation is not None
             and iface.implementation.implementing_fn in tool_functions.values()]
-        def result_fn(*args, **kw):
-            with config.configuration(**prompt_kw):
-                # Inject input arg values into sandbox so LLM can reference
-                # them as variables without copying large strings into code.
-                if inject_args:
-                    arg_names = list(interface.annotations.keys())[:-1]
-                    for name, val in zip(arg_names, args):
-                        python_executor.custom_tools[name] = val
-                prompt = self.create_prompt(
-                    interface, tool_interfaces, additional_imports,
-                    *args, inject_args=inject_args, **kw)
-                llm_output, stats = llm_util.llm(
-                    prompt, config.require('llm.model'))
-                try:
-                    generated_code = _extract_answer(
-                        str,
-                        llm_output,
-                        answer_pattern='```python\n([^`]*)\n```')
-                    if config.get('echo.code_eval_input'):
-                        llm_util.echo_boxed(generated_code, 'code_eval_input')
-                    code_output = python_executor(generated_code)
-                    answer = code_output.output
-                except Exception as ex:
-                    record.record(
-                        func=interface.name, args=args, kw=kw,
-                        output=f'**exception**: {ex}', stats=stats,
-                        step_info=dict(generated_code=llm_output))
-                    raise
-                if config.get('echo.code_eval_output'):
-                    llm_util.echo_boxed(str(answer), 'code_eval_output')
+
+    def __call__(self, *args, **kw):
+        interface = self.bound_interface
+        with config.configuration(**self.prompt_kw):
+            # Inject input arg values into sandbox so LLM can reference
+            # them as variables without copying large strings into code.
+            if self.inject_args:
+                arg_names = list(interface.annotations.keys())[:-1]
+                for name, val in zip(arg_names, args):
+                    self.python_executor.custom_tools[name] = val
+            prompt = self.create_prompt(
+                interface, self.tool_interfaces, self.additional_imports,
+                *args, inject_args=self.inject_args, **kw)
+            llm_output, stats = llm_util.llm(
+                prompt, self.llm_model)
+            try:
+                generated_code = _extract_answer(
+                    str,
+                    llm_output,
+                    answer_pattern='```python\n([^`]*)\n```')
+                if config.get('echo.code_eval_input'):
+                    llm_util.echo_boxed(generated_code, 'code_eval_input')
+                code_output = self.python_executor(generated_code)
+                answer = code_output.output
+            except Exception as ex:
                 record.record(
-                    func=interface.name, args=args, kw=kw, output=answer, stats=stats,
-                    step_info=dict(generated_code=generated_code))
-                return answer
-        return result_fn
+                    func=interface.name, args=args, kw=kw,
+                    output=f'**exception**: {ex}', stats=stats,
+                    step_info=dict(generated_code=llm_output))
+                raise
+            if config.get('echo.code_eval_output'):
+                llm_util.echo_boxed(str(answer), 'code_eval_output')
+            record.record(
+                func=interface.name, args=args, kw=kw, output=answer, stats=stats,
+                step_info=dict(generated_code=generated_code))
+            return answer
 
     def create_prompt(self, interface, tool_interfaces, additional_authorized_imports,
                       *args, inject_args=False, **kw):

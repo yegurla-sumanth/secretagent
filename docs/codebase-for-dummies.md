@@ -242,24 +242,28 @@ _FACTORIES = {
 }
 ```
 
-### The Factory Base Class (`core.py:146-169`)
+### The Factory Base Class (`core.py`)
 
-Every factory must implement one method:
+Every factory subclass overrides two methods:
 
 ```python
 class Factory(BaseModel):
-    def build_fn(self, interface, **kwargs) -> Callable:
-        """Return a function that implements this interface."""
+    def setup(self, **builder_kwargs):
+        """Configure per-interface state on self (called once at bind time)."""
+        ...
+
+    def __call__(self, *args, **kw):
+        """The implementing function (called each time the interface is invoked)."""
         ...
 ```
 
-The parent class wraps this with `build_implementation()` which adds metadata tracking (which factory created it, what kwargs were used) — this is important for the learning system later.
+When `build_implementation()` is called, it creates a fresh `model_copy()` of the factory prototype, sets `self.bound_interface`, calls `setup()`, and stores the factory copy as the callable implementation. This means each interface gets its own factory instance — `setup()` can safely store per-interface state on `self`.
 
 ---
 
 ### Factory 1: DirectFactory — "Just Run Python Code"
 
-**File:** `src/secretagent/implement_core.py:76-87`
+**File:** `src/secretagent/implement/core.py:76-87`
 
 The simplest factory. Uses an actual Python function as the implementation.
 
@@ -294,19 +298,20 @@ The workflow is bound via `direct` — it's just Python orchestration. But `anal
 
 ### Factory 2: SimulateFactory — "LLM, Pretend You're This Function"
 
-**File:** `src/secretagent/implement_core.py:89-144`
+**File:** `src/secretagent/implement/core.py:89-144`
 
 This is the workhorse factory. Let's trace exactly what happens when you call `sport_for("LeBron James")`:
 
 **Step A: Bind time** — `sport_for.implement_via('simulate')`
 
-The factory creates a "closure" — a function that remembers the interface it was created for:
+The factory's `setup()` stores configuration (examples, prompt overrides) on `self`. Then each call goes through `__call__()`:
 
 ```python
-def result_fn(*args, **kw):
-    prompt = create_prompt(interface, *args, **kw)        # build the prompt
-    llm_output, stats = llm_util.llm(prompt, model)       # call the LLM
-    answer = parse_output(return_type, llm_output)         # extract answer
+def __call__(self, *args, **kw):
+    interface = self.bound_interface
+    prompt = self.create_prompt(interface, *args, **kw)    # build the prompt
+    llm_output, stats = llm_util.llm(prompt, model)        # call the LLM
+    answer = self.parse_output(return_type, llm_output)    # extract answer
     record.record(func='sport_for', args=args, output=answer, stats=stats)
     return answer
 ```
@@ -352,7 +357,7 @@ basketball
 </answer>
 ```
 
-**Step D: parse_output()** (`implement_core.py:130-144`)
+**Step D: parse_output()** (`implement/core.py:130-144`)
 
 1. Regex finds text between `<answer>` and `</answer>` -> `"basketball"`
 2. Looks at the return type annotation (`str`)
@@ -378,7 +383,7 @@ If the return type were:
 
 ### Factory 3: PromptLLMFactory — "Use Your Own Prompt"
 
-**File:** `src/secretagent/implement_core.py:147-205`
+**File:** `src/secretagent/implement/core.py:147-205`
 
 When the default simulate prompt doesn't work well for your task, you write your own. Uses Python's `string.Template` with `$variable` placeholders that match the function's argument names.
 
@@ -421,7 +426,7 @@ my_func.implement_via('prompt_llm', prompt_template_file='my_prompt.txt')
 
 ### Factory 4: PoTFactory (Program of Thought) — "LLM Writes Code"
 
-**File:** `src/secretagent/implement_core.py:207-294`
+**File:** `src/secretagent/implement/core.py:207-294`
 
 Instead of asking the LLM "what's the answer?", it asks "write Python code that computes the answer." The code runs in a sandbox.
 
@@ -429,7 +434,7 @@ Instead of asking the LLM "what's the answer?", it asks "write Python code that 
 
 **Detailed walkthrough:**
 
-**Step A: Bind time** (`implement_core.py:210-236`)
+**Step A: Bind time** (`implement/core.py:210-236`)
 
 ```python
 are_sports_consistent.implement_via('program_of_thought')
@@ -528,7 +533,7 @@ my_func.implement_via('program_of_thought', tools=[analyze_sentence, sport_for])
 
 ### Factory 5: SimulatePydanticFactory — "Structured Output + Agent Tool Use"
 
-**File:** `src/secretagent/implement_pydantic.py`
+**File:** `src/secretagent/implement/pydantic.py`
 
 This uses pydantic-ai's `Agent` framework instead of raw litellm calls. It's more powerful but heavier.
 
@@ -589,7 +594,7 @@ When called, the agent might:
 
 **Important limitation:** Some models (like `together_ai/Qwen/Qwen3.5-9B` and `together_ai/google/gemma-3n-E4B-it`) don't support tool use. These models can't be used with `simulate_pydantic` when tools are involved.
 
-**Custom caching** (`implement_pydantic.py:23-33`):
+**Custom caching** (`implement/pydantic.py:23-33`):
 
 The cachier library needs a unique "key" for each call. But Agent objects aren't hashable. So `_run_agent_hashkey()` creates a SHA-256 hash from:
 
@@ -1160,21 +1165,20 @@ learn:
   train_dir: training
 ```
 
-**`build_fn()`** does:
+`setup()` does:
 
 1. **Find the file**: looks for `training/*sport_for__rote/learned.py` and picks the most recent (by timestamp in directory name)
 2. **Import it**: uses `importlib` to load the file as a Python module
-3. **Extract the function**: `getattr(mod, 'sport_for')` gets the function
-4. **Backoff wrapping** (if `backoff=True`):
+3. **Extract the function**: `getattr(mod, 'sport_for')` gets the function, stored as `self.learned_fn`
+4. **Backoff setup** (if `backoff=True`): builds the original LLM implementation from saved config yamls and stores it as `self.backoff_impl`
+
+Then `__call__()` tries the learned function first, falling back if it returns None:
 
 ```python
-# Build the original LLM implementation from saved configs
-backoff_impl = _build_backoff_impl(interface, workdir)
-
-def learned_with_backoff(*args, **kw):
-    result = fn(*args, **kw)          # try the lookup table
-    if result is None:                 # input not in the table!
-        return backoff_impl(*args, **kw)  # fall back to the LLM
+def __call__(self, *args, **kw):
+    result = self.learned_fn(*args, **kw)   # try the lookup table
+    if result is None and self.backoff_impl is not None:
+        return self.backoff_impl.implementing_fn(*args, **kw)  # fall back to the LLM
     return result
 ```
 

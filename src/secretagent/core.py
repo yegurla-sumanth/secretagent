@@ -1,12 +1,12 @@
 """Core components of SecretAgents package: interfaces and implementations.
 """
 
-import functools
 import inspect
 
-from abc import abstractmethod
 from pydantic import BaseModel, Field
 from typing import Any, Callable, Optional
+
+from secretagent import config
 
 # registries of defined interfaces and implementation factories
 
@@ -145,26 +145,57 @@ class Implementation(BaseModel):
 
     class Factory(BaseModel):
         """Build one kind of implementation in a configurable way.
+
+        Subclasses override setup() and __call__():
+        - setup(**builder_kwargs) configures per-interface state on self
+        - __call__(*args, **kw) is the implementing function
+
+        Each call to build_implementation() creates a fresh copy of the
+        factory, so setup() can safely store per-interface state on self,
+        to be used by __call__() later on.
         """
-        @abstractmethod
-        def build_fn(self, interface: 'Interface', **builder_kwargs) -> Callable:
-            """Create a callable function that implements the interface.
-            """
-            ...
+        bound_interface: Optional['Interface'] = Field(
+            default=None,
+            description="Interface this factory copy is bound to (set by build_implementation)")
+        model: str | None = Field(
+            default=None,
+            description="LLM model override; defaults to config llm.model")
+
+        @property
+        def llm_model(self) -> str:
+            """Return the model to use: explicit override or config default."""
+            return self.model or config.require('llm.model')
+
+        @property
+        def __name__(self):
+            """Function-like name for the bound factory."""
+            if self.bound_interface is not None:
+                return self.bound_interface.name
+            return self.__class__.__name__
+
+        def setup(self, **builder_kwargs):
+            """Configure per-interface state on self."""
+            pass
+
+        def __call__(self, *args, **kw):
+            """The implementing function."""
+            raise NotImplementedError(
+                f'{self.__class__.__name__} must override __call__')
 
         def build_implementation(
                 self, interface: 'Interface', **builder_kwargs) -> 'Implementation':
             """Create an Implementation for the interface.
-            """
-            # wrap the implementing function appropriately
-            fn = self.build_fn(interface, **builder_kwargs)
 
-            @functools.wraps(interface.func)
-            def wrapped_fn(*fn_args, **fn_kw):
-                return fn(*fn_args, **fn_kw)
+            Creates a fresh copy of this factory so that per-interface state
+            can be stored on self without affecting the global prototype.
+            """
+            factory = self.model_copy()
+            factory.bound_interface = interface
+            factory.model = builder_kwargs.pop('model', None)
+            factory.setup(**builder_kwargs)
 
             return Implementation(
-                implementing_fn=wrapped_fn,
+                implementing_fn=factory,
                 factory_method=self.__class__.__name__,
                 factory_kwargs=builder_kwargs)
 

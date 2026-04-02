@@ -26,7 +26,7 @@ that the code is able to be run independently.
 Do NOT wrap the code in a function definition. 
 
 Note it is NOT necessary for the code to be a completely
-general inplementation, it only needs to work for these
+general implementation, it only needs to work for these
 specific inputs. 
 
 $imports

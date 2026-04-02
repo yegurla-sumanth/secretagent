@@ -27,10 +27,10 @@ passed through to the inner factory.
 """
 
 from collections import Counter
-from typing import Callable
+from typing import Any
 
 from secretagent.core import (
-    Interface, Implementation, register_factory, _FACTORIES,
+    Implementation, register_factory, _FACTORIES,
 )
 from secretagent import config, record
 
@@ -42,68 +42,65 @@ class SelfConsistencyFactory(Implementation.Factory):
         inner_method: the factory method to wrap (e.g. 'simulate')
         n_samples: number of times to run (default 3)
 
-    All other kwargs are passed to the inner factory's build_fn.
+    All other kwargs are passed to the inner factory's setup.
     """
+    inner_fn: Any = None
+    n_samples: int = 3
 
-    def build_fn(
-        self,
-        interface: Interface,
-        inner_method: str = 'simulate',
-        n_samples: int = 3,
-        **inner_kwargs,
-    ) -> Callable:
-        # Build the inner implementation's function
+    def setup(self, inner_method='simulate', n_samples=3, **inner_kwargs):
+        self.n_samples = n_samples
         inner_factory = _FACTORIES[inner_method]
-        inner_fn = inner_factory.build_fn(interface, **inner_kwargs)
+        inner_impl = inner_factory.build_implementation(
+            self.bound_interface, model=self.model, **inner_kwargs)
+        self.inner_fn = inner_impl.implementing_fn
 
-        def result_fn(*args, **kw):
-            outputs = []
+    def __call__(self, *args, **kw):
+        interface = self.bound_interface
+        outputs = []
 
-            for i in range(n_samples):
-                try:
-                    # Temporarily disable caching so we get diverse samples
-                    with config.configuration(cachier={'enable_caching': False}):
-                        output = inner_fn(*args, **kw)
-                    outputs.append(output)
-                except Exception:
-                    # Skip failed samples
-                    pass
-
-            if not outputs:
-                raise ValueError(
-                    f'self_consistency: all {n_samples} samples failed')
-
-            # Majority vote
-            # Convert unhashable types to strings for counting
+        for i in range(self.n_samples):
             try:
-                counter = Counter(outputs)
-            except TypeError:
-                counter = Counter(str(o) for o in outputs)
-                # Map back to original
-                str_to_orig = {str(o): o for o in outputs}
-                winner_str = counter.most_common(1)[0][0]
-                winner = str_to_orig[winner_str]
-            else:
-                winner = counter.most_common(1)[0][0]
+                # Temporarily disable caching so we get diverse samples
+                with config.configuration(cachier={'enable_caching': False}):
+                    output = self.inner_fn(*args, **kw)
+                outputs.append(output)
+            except Exception:
+                # Skip failed samples
+                pass
 
-            # Record the majority vote result
-            vote_info = {
-                'n_samples': n_samples,
-                'n_succeeded': len(outputs),
-                'vote_counts': dict(Counter(str(o) for o in outputs)),
-                'agreement': counter.most_common(1)[0][1] / len(outputs),
-            }
-            record.record(
-                func=interface.name,
-                args=args, kw=kw,
-                output=winner,
-                stats={},
-                step_info={'self_consistency': vote_info},
-            )
+        if not outputs:
+            raise ValueError(
+                f'self_consistency: all {self.n_samples} samples failed')
 
-            return winner
+        # Majority vote
+        # Convert unhashable types to strings for counting
+        try:
+            counter = Counter(outputs)
+        except TypeError:
+            counter = Counter(str(o) for o in outputs)
+            # Map back to original
+            str_to_orig = {str(o): o for o in outputs}
+            winner_str = counter.most_common(1)[0][0]
+            winner = str_to_orig[winner_str]
+        else:
+            winner = counter.most_common(1)[0][0]
 
-        return result_fn
+        # Record the majority vote result
+        vote_info = {
+            'n_samples': self.n_samples,
+            'n_succeeded': len(outputs),
+            'vote_counts': dict(Counter(str(o) for o in outputs)),
+            'agreement': counter.most_common(1)[0][1] / len(outputs),
+        }
+        record.record(
+            func=interface.name,
+            args=args, kw=kw,
+            output=winner,
+            stats={},
+            step_info={'self_consistency': vote_info},
+        )
+
+        return winner
 
 
 register_factory('self_consistency', SelfConsistencyFactory())

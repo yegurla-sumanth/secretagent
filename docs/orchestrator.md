@@ -319,7 +319,7 @@ using the orchestrator.
 
 Registered as `'orchestrate'` in the factory registry.
 
-#### `build_fn(interface, task_description=None, exclude=None, test_case=None, **kw)`
+#### `setup(task_description=None, exclude=None, test_case=None, **kw)`
 
 - **task_description** (`str | None`): defaults to the interface's docstring
 - **exclude** (`list[str] | None`): additional names to exclude from catalog

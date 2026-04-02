@@ -117,10 +117,8 @@ def test_executor_has_tool_functions():
         """Use tool_a."""
 
     factory = PoTFactory()
-    fn = factory.build_fn(orchestrator)
-    # The executor is captured in the closure; we can't inspect it directly,
-    # but we can verify the function was built without error
-    assert callable(fn)
+    impl = factory.build_implementation(orchestrator)
+    assert callable(impl.implementing_fn)
     _INTERFACES.remove(tool_a)
     _INTERFACES.remove(orchestrator)
 

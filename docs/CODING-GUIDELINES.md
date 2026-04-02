@@ -23,7 +23,7 @@ concrete principles are below.
 
 Every experiment, including ones that rely on a learning optimization
 strategy, should be completely tracked so it can be reproduced.  For
-instance, when an inplementation is learned with a `learn.Learner` is
+instance, when an implementation is learned with a `learn.Learner` is
 is saved along with pointers to the recordings used to train it.
 
  * Use `config` for everything you can - configs are easy to save and
