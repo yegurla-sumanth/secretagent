@@ -16,6 +16,7 @@ def _has_llm_key():
     return bool(
         os.environ.get("ANTHROPIC_API_KEY")
         or os.environ.get("TOGETHERAI_API_KEY")
+        or os.environ.get("TOGETHER_AI_API_KEY")
     )
 
 

@@ -168,7 +168,7 @@ def paired_result_df(
             'n': n,
         }
         for m in metrics:
-            col_a, col_b = joined[f'{m}_a'], joined[f'{m}_b']
+            col_a, col_b = joined[f'{m}_a'].astype(float), joined[f'{m}_b'].astype(float)
             if (col_a == col_b).all():
                 row[f'{m}_t'] = 0.0
                 row[f'{m}_p'] = 1.0

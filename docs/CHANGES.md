@@ -1,3 +1,18 @@
+# Changes - April 3
+
+ * **Global results Makefile** — `benchmarks/Makefile` operates on
+   all exported results across benchmarks. Run from `benchmarks/`:
+
+```
+make plot            # global cost-vs-correct → results_all.png
+make plot_sport      # sport only
+make plot_natural    # natural_plan only
+make plot_rule       # rulearena only
+```
+
+ * **Bug fix** — `cli/results.py` `ttest_rel` crash on boolean
+   `correct` column; added `.astype(float)` cast.
+
 # Changes - April 2
 
  * Refactored implement/ to make creating new Implementation.Factories
