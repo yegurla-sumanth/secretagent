@@ -25,6 +25,8 @@ uv run python expt.py run dataset.split=test dataset.context_len=1024 dataset.n=
 uv run python expt.py run dataset.context_len=1024 cachier.enable_caching=false oolong.enable_window_cache=false
 ```
 
+Top-level evaluated interface is `ptools.answer_question` (bound to `direct` by default).
+
 ## Common overrides
 
 ```bash

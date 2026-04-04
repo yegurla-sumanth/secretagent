@@ -23,7 +23,7 @@ logfire:
 dataset:
   split: validation
   shuffle_seed: 42
-  n: 3
+  n: null
   # For per-length shards, set this in CLI or uncomment.
   # context_len: 1024
 
@@ -43,9 +43,11 @@ oolong:
   classify_retries: 10
   classify_backoff: 1.5
   assumed_context_len_for_batching: 1024
-  answer_retries: 6
+  answer_retries: 1
 
 ptools:
+  answer_question:
+    method: direct
   infer_context_schema:
     method: simulate
   classify_entry_batch:
