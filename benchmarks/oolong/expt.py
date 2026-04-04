@@ -352,16 +352,6 @@ def context_for_cid(rows: list[dict[str, Any]], cid: int) -> tuple[str, str, int
     raise KeyError(f"context_window_id not found: {cid}")
 
 
-def answer_from_cache(question: str, label_set: list, records: list) -> str:
-    """Call answer ptool and normalize final answer string."""
-    resp = ptools.answer_from_cached_records(
-        question=question,
-        label_set=label_set,
-        records=records,
-    )
-    return ph.extract_final_answer(resp)
-
-
 def _oolong_max_workers() -> int:
     """Concurrent LLM workers for one run (phase 1 + phase 2). Default 1 = sequential."""
     try:
@@ -450,14 +440,20 @@ def run_two_phase(rows: list[dict[str, Any]]) -> Path:
                 cid, payload = fut.result()
                 by_cid[cid] = payload
 
+    ph.install_run_window_payloads(by_cid)
     cases: list[Case] = []
     for r in rows:
         cid = int(r["context_window_id"])
-        label_set, records = ph.label_set_and_records_for_answer(by_cid[cid])
         cases.append(
             Case(
                 name=str(r.get("id", f"{split}.{cid}")),
-                input_args=(str(r.get("question", "")), label_set, records),
+                input_args=(
+                    str(r.get("context_window_text", r.get("context", ""))),
+                    str(r.get("question", "")),
+                    cid,
+                    str(r.get("dataset", "")),
+                    (int(r["context_len"]) if r.get("context_len") is not None else None),
+                ),
                 expected_output=r.get("answer", ""),
                 metadata={
                     "context_window_id": cid,
@@ -471,7 +467,10 @@ def run_two_phase(rows: list[dict[str, Any]]) -> Path:
     print("dataset:", dataset.summary())
 
     evaluator = OolongEvaluator()
-    csv_path = evaluator.evaluate(dataset, answer_from_cache)
+    try:
+        csv_path = evaluator.evaluate(dataset, ptools.answer_question)
+    finally:
+        ph.clear_run_window_payloads()
 
     df = pd.read_csv(csv_path)
     print(df)

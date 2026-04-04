@@ -4,13 +4,22 @@ Replace this module with your tools from your previous experiment.
 Each @interface stub should have a docstring and type hints.
 """
 
+from pathlib import Path
 from typing import Any, Dict, List
 
+from secretagent import config
 from secretagent.core import interface
 
+import pipeline_helpers as ph
 
 @interface
-def answer_question(context: str, question: str) -> str:
+def answer_question(
+    context: str,
+    question: str,
+    context_window_id: int | None = None,
+    dataset: str = "",
+    context_len: int | None = None,
+) -> str:
     """Zero-shot baseline: answer directly from the raw context window.
 
     Inputs:
@@ -22,7 +31,59 @@ def answer_question(context: str, question: str) -> str:
     - Do not use external knowledge; rely only on context + question.
     - Follow the question's expected answer format when possible.
     """
-    ...
+    if context_window_id is None:
+        raise ValueError("answer_question requires context_window_id for cached workflow")
+
+    cid = int(context_window_id)
+    payload = ph.get_run_window_payload(cid)
+
+    split = str(config.require("dataset.split"))
+    context_len_cfg = config.get("dataset.context_len")
+    context_len_cfg = int(context_len_cfg) if context_len_cfg is not None else None
+    use_window_cache = bool(config.get("oolong.enable_window_cache", True))
+    cache_root = Path(__file__).resolve().parent / str(
+        config.get("oolong.window_cache_dir") or "window_cache"
+    )
+
+    model_slug: str | None = None
+    if bool(config.get("oolong.scope_caches_to_model", True)):
+        model_slug = ph.filesystem_slug(str(config.require("llm.model")))
+
+    cache_path = ph.window_cache_path(
+        cache_root, split, context_len_cfg, cid, model_slug=model_slug
+    )
+    if payload is None and use_window_cache:
+        payload = ph.load_window_cache(cache_path)
+
+    if payload is None:
+        effective_context_len = (
+            int(context_len)
+            if context_len is not None
+            else int(config.get("oolong.assumed_context_len_for_batching") or 1024)
+        )
+        payload = ph.build_window_payload(
+            context=context,
+            dataset=str(dataset),
+            context_len=effective_context_len,
+            infer_fn=infer_context_schema,
+            classify_fn=classify_entry_batch,
+            token_budget_per_call=int(config.get("oolong.token_budget_per_call") or 1280),
+            schema_line_limit=int(config.get("oolong.schema_infer_line_limit") or 20),
+            schema_retries=int(config.get("oolong.schema_retries") or 4),
+            schema_backoff=float(config.get("oolong.schema_backoff") or 1.7),
+            classify_retries=int(config.get("oolong.classify_retries") or 10),
+            classify_backoff=float(config.get("oolong.classify_backoff") or 1.5),
+        )
+        if use_window_cache:
+            ph.save_window_cache(cache_path, payload)
+
+    label_set, records = ph.label_set_and_records_for_answer(payload)
+    resp = answer_from_cached_records(
+        question=question,
+        label_set=label_set,
+        records=records,
+    )
+    return ph.extract_final_answer(resp)
 
 @interface
 def infer_context_schema(

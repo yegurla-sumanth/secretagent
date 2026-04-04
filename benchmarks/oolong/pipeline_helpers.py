@@ -14,6 +14,27 @@ from pathlib import Path
 from typing import Any, Callable
 from tqdm import tqdm
 
+_RUN_WINDOW_PAYLOADS: dict[int, dict[str, Any]] | None = None
+
+
+def install_run_window_payloads(by_cid: dict[int, dict[str, Any]]) -> None:
+    """Install in-memory phase-1 payloads for this run."""
+    global _RUN_WINDOW_PAYLOADS
+    _RUN_WINDOW_PAYLOADS = by_cid
+
+
+def get_run_window_payload(cid: int) -> dict[str, Any] | None:
+    """Return an in-memory payload for context_window_id if available."""
+    if _RUN_WINDOW_PAYLOADS is None:
+        return None
+    return _RUN_WINDOW_PAYLOADS.get(int(cid))
+
+
+def clear_run_window_payloads() -> None:
+    """Clear in-memory phase-1 payloads after run completion."""
+    global _RUN_WINDOW_PAYLOADS
+    _RUN_WINDOW_PAYLOADS = None
+
 
 def unwrap_result(payload: Any) -> dict[str, Any]:
     """Return payload['result'] when present, else normalize to a dict."""
