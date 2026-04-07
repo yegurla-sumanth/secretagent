@@ -1,65 +1,60 @@
 # NaturalPlan Benchmark
 
-Calendar scheduling, meeting planning, trip planning — 3 tasks × 5 levels (zeroshot_structured, zeroshot_unstructured, workflow, pot, react).
+Calendar scheduling, meeting planning, trip planning — 3 tasks × 5 baselines.
 
-## Setup
+## Quick Start
 
 ```bash
 cd secretagent && uv sync
-export TOGETHER_API_KEY="your-key"
+export TOGETHER_AI_API_KEY="your-key"
+cd benchmarks/natural_plan
 ```
 
-## Flow
+API keys can also be stored in `secretagent/.env` (auto-loaded by Makefile).
 
-1. `expt.py run` loads data → implements ptools via config → evaluates interface on dataset
-2. Results go to `results/{task}/{timestamp}.{expt_name}/` (csv, config, run_summary.json)
-3. `make report` aggregates runs into a table
-
-## Examples
+## Run Baselines
 
 ```bash
-cd benchmarks/natural_plan
-
-# Quick test (2 samples)
-uv run python expt.py run --config-file conf/calendar.yaml \
-  evaluate.expt_name=cal_workflow ptools.calendar_scheduling.method=direct \
-  ptools.calendar_scheduling.fn=ptools_calendar.calendar_workflow dataset.n=2
-
-# Or Makefile
+# Single experiment
 make cal_workflow
 
-# 50 stratified samples (AgentProject-compatible)
-uv run python expt.py run --config-file conf/calendar.yaml \
-  evaluate.expt_name=cal_workflow ptools.calendar_scheduling.method=direct \
-  ptools.calendar_scheduling.fn=ptools_calendar.calendar_workflow \
-  dataset.stratified=true dataset.sample_n=50 dataset.n=50
-
-# All 15 combinations, n=5 each
+# All 15 (3 tasks × 5 levels), default n=50
 make run_all_15
 
-# View results (writes report.md, grouped by task)
-make report
+# Quick test (n=5)
+uv run python scripts/run_all_15.py -n 5
+
+# 5-shot mode
+uv run python scripts/run_all_15.py -n 5 --prompt-mode 5shot
+
+# With prompt traces
+make run_all_15_trace
 ```
+
+## Results
+
+```bash
+make report          # → report.md
+make plot            # → plot_calendar.png, plot_meeting.png, plot_trip.png
+make export          # copy to benchmarks/results/natural_plan/
+```
+
+## Test
+
+```bash
+make test
+```
+
+15 tests (3 tasks × 5 baselines), 2 samples each. Mirrors `test_sports_understanding.py`.
 
 ## Config
 
 | Param | Default | Description |
 |-------|---------|-------------|
-| `llm.model` | `together_ai/deepseek-ai/DeepSeek-V3.1` | Model string (litellm) |
-| `dataset.split` | - | `calendar` / `meeting` / `trip` |
+| `llm.model` | `together_ai/deepseek-ai/DeepSeek-V3.1` | LLM model (litellm) |
+| `dataset.split` | — | `calendar` / `meeting` / `trip` |
 | `dataset.n` | 4 | Sample limit |
 | `dataset.prompt_mode` | 5shot | `5shot` / `0shot` |
 | `dataset.stratified` | false | Stratified sampling |
-| `dataset.sample_n` | 50 | Samples when stratified (50 cal, 50 meet, 48 trip) |
-| `dataset.sample_seed` | 42 | Seed for stratified |
-| `evaluate.expt_name` | - | Run tag |
-| `ptools.{entry}.method` | - | `simulate` / `direct` / `prompt_llm` / `program_of_thought` / `simulate_pydantic` |
-
-## Scripts
-
-- `scripts/sample_ids.py` — export stratified IDs to `data/sampled_ids.json`
-- `scripts/report.py` — table by task → report.md
-- `scripts/analyze_wrong.py` — analyze wrong predictions
-- `scripts/clean_test_runs.py` — delete test run dirs (cal_test, cal_trace_test, meet_trace_test)
-
-**Prompt trace** 保存在每个 run 目录下：`results/.../YYYYMMDD.HHMMSS.expt_name/prompt_trace.jsonl`。需加 `evaluate.prompt_trace=true` 或 `run_all_15.py --trace` 才会生成。
+| `dataset.sample_n` | 50 | Samples when stratified |
+| `ptools.{entry}.method` | — | `simulate` / `direct` / `prompt_llm` / `program_of_thought` / `simulate_pydantic` |

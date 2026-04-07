@@ -17,11 +17,11 @@ Or via config::
         task_description: "Solve the problem by ..."
 """
 
-from typing import Callable
+from typing import Any
 
 from secretagent import config
 from secretagent.core import (
-    Interface, Implementation, all_interfaces, register_factory,
+    Implementation, all_interfaces, register_factory,
 )
 from secretagent.orchestrate.catalog import PtoolCatalog, PtoolInfo
 from secretagent.orchestrate.composer import compose, compose_with_retry
@@ -51,18 +51,18 @@ class OrchestrateFactory(Implementation.Factory):
         echo.orchestrate: print the generated pipeline code
     """
 
-    def build_fn(
+    pipeline: Any = None
+
+    def setup(
         self,
-        interface: Interface,
         task_description: str | None = None,
         exclude: list[str] | None = None,
         test_case: dict | list | None = None,
         **kw,
-    ) -> Callable:
-        """Build an implementation by having an LLM compose available ptools.
+    ):
+        """Build a pipeline by having an LLM compose available ptools.
 
         Args:
-            interface: the workflow Interface to implement
             task_description: what the pipeline should accomplish;
                 defaults to the interface's docstring
             exclude: additional interface names to exclude from the catalog
@@ -70,6 +70,7 @@ class OrchestrateFactory(Implementation.Factory):
                 Should be a dict with 'input_args' (list) and optionally
                 'expected_output', or just a list of positional args.
         """
+        interface = self.bound_interface
         task_description = task_description or interface.doc
 
         # Build catalog from all implemented interfaces, excluding this one
@@ -102,8 +103,8 @@ class OrchestrateFactory(Implementation.Factory):
             )
 
             def test_fn(code: str):
-                pipeline = build_pipeline(code, interface, tool_interfaces)
-                pipeline(*test_args)
+                p = build_pipeline(code, interface, tool_interfaces)
+                p(*test_args)
 
             code, attempt = compose_with_retry(
                 task_description, catalog, entry_signature,
@@ -114,13 +115,14 @@ class OrchestrateFactory(Implementation.Factory):
         else:
             code = compose(task_description, catalog, entry_signature, **kw)
 
-        pipeline = build_pipeline(code, interface, tool_interfaces)
+        self.pipeline = build_pipeline(code, interface, tool_interfaces)
 
         if config.get('echo.orchestrate'):
             from secretagent.llm_util import echo_boxed
-            echo_boxed(pipeline.source, 'orchestrated pipeline')
+            echo_boxed(self.pipeline.source, 'orchestrated pipeline')
 
-        return pipeline._fn
+    def __call__(self, *args, **kw):
+        return self.pipeline._fn(*args, **kw)
 
 
 register_factory('orchestrate', OrchestrateFactory())

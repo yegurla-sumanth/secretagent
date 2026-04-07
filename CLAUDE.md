@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 systems where "everything looks like code." You define Python stubs
 with only a type signature and docstring, and decorate them with
 `@interface`.  These stubs are later *bound* to implementations
-via `implement_via()` and a registry of `Implementation.Factory` classes.
+via `implement_via()` and a registry of `Implementation.Factory` classes
+(each Factory subclass overrides `setup()` and `__call__()`).
 
 ## Running code: use uv for running code and installing packages
 
@@ -34,13 +35,13 @@ via `implement_via()` and a registry of `Implementation.Factory` classes.
  * `'simulate'` — prompt an LLM to predict the function output (uses `llm_util`)
  * `'prompt_llm'` — use a custom prompt template to predict the function
  * `'program_of_thought'` — generate Python code with an LLM and execute it in a sandboxed executor
- * `'simulate_pydantic'` — like simulate but uses a pydantic-ai Agent (in `implement_pydantic.py`)
+ * `'simulate_pydantic'` — like simulate but uses a pydantic-ai Agent (in `implement/pydantic.py`)
 
 ### Key files
 
- * `src/secretagent/core.py` — Interface, Implementation, Factory base class, and built-in factories
- * `src/secretagent/implement_pydantic.py` — SimulatePydanticFactory (pydantic-ai Agent backend)
- * `src/secretagent/implement_core.py` — built-in factories (direct, echo, simulate, prompt_llm)
+ * `src/secretagent/core.py` — Interface, Implementation, Factory base class
+ * `src/secretagent/implement/pydantic.py` — SimulatePydanticFactory (pydantic-ai Agent backend)
+ * `src/secretagent/implement/core.py` — built-in factories (direct, simulate, prompt_llm, program_of_thought)
  * `src/secretagent/config.py` — global/local configuration via `configure()` and `configuration()` context manager
  * `src/secretagent/record.py` — recording of interface calls via `recorder()` context manager
  * `src/secretagent/cache_util.py` — runtime cachier wrapper that reads config at call time
@@ -71,7 +72,7 @@ This project is heavily configuration-driven, like most ML systems.
    * `together_ai/google/gemma-3n-E4B-it` - ultra-cheap ($0.02/$0.04 per 1M tokens)
      * doesn't support tool use, needed for pydantic-ai models
    * `claude-haiku-4-5-20251001` - quick cheap and stable, needs Anthropic API key
-   * `together_ai/deepseek-ai/DeepSeek-V3.1` - cheap but strong reasoning model, needs Together API key
+   * `together_ai/deepseek-ai/DeepSeek-V3.1` - cheap but strong reasoning ($0.60/$1.70 per 1M tokens)
    * `together_ai/openai/gpt-oss-20b` - very cheap ($0.05/$0.20 per 1M tokens)
    * `together_ai/openai/gpt-oss-120b` - good value, larger ($0.15/$0.60 per 1M tokens)
    * `together_ai/Qwen/Qwen3-Next-80B-A3B-Instruct` - good value, MoE ($0.15/$1.50 per 1M tokens)
@@ -81,7 +82,7 @@ This project is heavily configuration-driven, like most ML systems.
  * `echo.llm_output` — print the LLM response in a box
  * `echo.code_eval_output` — print result of executing LLM-generated code
  * `echo.service` — print service information
- * `echo.call` — print function call signatures (used by EchoFactory)
+ * `echo.call` — print function call signatures
  * `evaluate.expt_name` — name tag for the experiment (used in result filenames and dataframes)
  * `evaluate.result_dir` — directory to save results CSV and config YAML snapshot
  * `evaluate.record_details` — if `True`, include full rollout recordings in JSONL output (default `False`)

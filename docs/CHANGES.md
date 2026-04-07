@@ -1,3 +1,96 @@
+# Changes - April 3
+
+ * **Global results Makefile** — `benchmarks/Makefile` operates on
+   all exported results across benchmarks. Run from `benchmarks/`:
+
+```
+make plot            # global cost-vs-correct → results_all.png
+make plot_sport      # sport only
+make plot_natural    # natural_plan only
+make plot_rule       # rulearena only
+```
+
+ * **Parse post-processing** — any interface can now add a `parse`
+   step via config. The parse interface inherits the original's return
+   type and docstring, then wraps the output. Two modes:
+
+   - `simulate` — LLM re-parses the raw output each time
+   - `program_of_thought` — LLM generates regex/parsing code, then
+     executes it in sandbox (cached across examples)
+   - `direct` — user-provided parsing function (`fn=module.func`)
+
+   Implementation: `_add_parse_wrapper()` in `core.py` creates a
+   lightweight parse `Interface` on the fly and wraps the original
+   `implementing_fn`. No new factories needed.
+
+```
+# LLM parse
+ptools.calendar_scheduling.parse.method=simulate
+
+# LLM generates code to parse (PoT)
+ptools.calendar_scheduling.parse.method=program_of_thought
+```
+
+ * **Bug fix** — `cli/results.py` `ttest_rel` crash on boolean
+   `correct` column; added `.astype(float)` cast.
+
+# Changes - April 2
+
+ * Refactored implement/ to make creating new Implementation.Factories
+   less obscure.  Subclasses now override `setup()` and `__call__()`,
+   and theres no build_fn that returns a closure.  **I believe this
+   should not affect anyone unless they are implementing factories**.
+
+```
+ - setup(**builder_kwargs) configures per-interface state on self
+ - __call__(*args, **kw) is the implementing function
+```
+
+ * I did this to facilitate fixing a bug: I intended you to be able to
+ pass `model` in as a parameter to every Implementation.Factory and
+ override the default configured model.  This is now fixed,
+ and `sports_understanding/model_sweep.py` is an example.
+
+# Changes - April 1
+
+## Pipeline Optimizer (Phase 1)
+
+Added multi-objective Pareto search to `src/secretagent/optimize/`:
+
+ * `encoder.py` — maps DEAP integer vectors to/from dotlist config
+   overrides. `SearchDimension(key, values)` defines one axis of the
+   search space. `encode()` / `decode()` / `decode_dict()` handle the
+   conversion; `space_size()` returns the Cartesian product size.
+
+ * `pareto.py` — two search modes behind a single `run_nsga2()` entry
+   point. Spaces with <= 20 configs get **exhaustive enumeration**
+   (guarantees complete coverage). Larger spaces use **NSGA-II** via
+   DEAP with categorical operators (uniform crossover, random-reset
+   mutation). `EvalCache` wraps subprocess evaluation, caches results
+   by chromosome, and assigns worst-case fitness (accuracy=0, cost=inf)
+   to failed configs so they can't appear Pareto-optimal.
+
+ * `viz.py` — `plot_pareto_frontier()` renders accuracy-vs-cost scatter
+   plots with frontier points as filled stars and dominated points as
+   hollow circles. Fixed y-axis (0-1) to prevent misleading auto-scaling.
+
+ * **New dependency**: `deap` (LGPL-3.0, evolutionary algorithms toolkit).
+
+### Design decisions
+
+ * Subprocess-level integration: the optimizer generates dotlist
+   overrides and passes them to the existing evaluator via subprocess.
+   No changes to core infra, config system, or benchmark code.
+ * Exhaustive/NSGA-II auto-selection avoids using evolutionary search
+   on spaces small enough to enumerate (a lesson learned during
+   development — NSGA-II on a 4-config space wastes budget on
+   duplicates).
+
+### Tests
+
+ * `tests/test_encoder.py` — 20 tests covering encode, decode,
+   round-trip, out-of-bounds, wrong-length, and space_size.
+
 # Changes - March 29-30
 
 ## To help get organized results 

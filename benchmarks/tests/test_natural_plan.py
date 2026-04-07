@@ -1,0 +1,173 @@
+"""Lightweight pytest suite for benchmarks/natural_plan/.
+
+Mirrors the Makefile baselines (unstructured, structured, workflow, pot, react)
+across all three tasks (calendar, meeting, trip) — 15 tests total, 2 examples each.
+"""
+
+import importlib
+import os
+import sys
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from conftest import needs_api_key, CI_TEST_MODEL
+from omegaconf import OmegaConf
+from secretagent import config
+from secretagent.core import implement_via_config
+
+NATURAL_PLAN_DIR = Path(__file__).resolve().parent.parent / "natural_plan"
+
+TASK_CONFIG = {
+    "calendar": {
+        "config_file": "conf/calendar.yaml",
+        "ptools_module": "ptools_calendar",
+        "interface": "calendar_scheduling",
+        "workflow_fn": "ptools_calendar.calendar_workflow",
+    },
+    "meeting": {
+        "config_file": "conf/meeting.yaml",
+        "ptools_module": "ptools_meeting",
+        "interface": "meeting_planning",
+        "workflow_fn": "ptools_meeting.meeting_workflow",
+    },
+    "trip": {
+        "config_file": "conf/trip.yaml",
+        "ptools_module": "ptools_trip",
+        "interface": "trip_planning",
+        "workflow_fn": "ptools_trip.trip_workflow",
+    },
+}
+
+
+def _import_modules(task):
+    """Import ptools and expt modules from the natural_plan benchmark directory."""
+    if str(NATURAL_PLAN_DIR) not in sys.path:
+        sys.path.insert(0, str(NATURAL_PLAN_DIR))
+    tc = TASK_CONFIG[task]
+    ptools_mod = importlib.import_module(tc["ptools_module"])
+    importlib.reload(ptools_mod)
+    import eval_utils
+    importlib.reload(eval_utils)
+    from expt import NaturalPlanEvaluator, load_dataset
+    return ptools_mod, NaturalPlanEvaluator, load_dataset
+
+
+def _run_eval(tmp_path, task, extra_dotlist, n=2):
+    """Configure pipeline, load n examples, evaluate, return DataFrame."""
+    prev_cwd = os.getcwd()
+    try:
+        os.chdir(NATURAL_PLAN_DIR)
+        ptools_mod, NaturalPlanEvaluator, load_dataset = _import_modules(task)
+        tc = TASK_CONFIG[task]
+
+        # Reset global config to avoid cross-task contamination
+        config.GLOBAL_CONFIG = OmegaConf.create()
+
+        conf_path = NATURAL_PLAN_DIR / tc["config_file"]
+        config.configure(
+            yaml_file=str(conf_path),
+            dotlist=[
+                f"llm.model={CI_TEST_MODEL}",
+                f"evaluate.result_dir={tmp_path}",
+                f"dataset.n={n}",
+                "dataset.prompt_mode=0shot",
+            ] + extra_dotlist,
+        )
+        config.set_root(NATURAL_PLAN_DIR)
+        implement_via_config(ptools_mod, config.require("ptools"))
+
+        dataset = load_dataset(task, prompt_mode="0shot")
+        dataset.configure(
+            shuffle_seed=config.get("dataset.shuffle_seed"),
+            n=n,
+        )
+
+        interface = getattr(ptools_mod, tc["interface"])
+        evaluator = NaturalPlanEvaluator(task)
+        csv_path = evaluator.evaluate(dataset, interface)
+        df = pd.read_csv(csv_path)
+        assert len(df) == n
+        assert "correct" in df.columns
+        return df
+    finally:
+        os.chdir(prev_cwd)
+
+
+def _structured_dotlist(task):
+    iface = TASK_CONFIG[task]["interface"]
+    return [
+        f"evaluate.expt_name=test_{task}_structured",
+        f"ptools.{iface}.method=simulate",
+    ]
+
+
+def _unstructured_dotlist(task):
+    iface = TASK_CONFIG[task]["interface"]
+    return [
+        f"evaluate.expt_name=test_{task}_unstructured",
+        f"ptools.{iface}.method=prompt_llm",
+        f"ptools.{iface}.prompt_template_file=prompt_templates/zeroshot.txt",
+    ]
+
+
+def _workflow_dotlist(task):
+    tc = TASK_CONFIG[task]
+    return [
+        f"evaluate.expt_name=test_{task}_workflow",
+        f"ptools.{tc['interface']}.method=direct",
+        f"ptools.{tc['interface']}.fn={tc['workflow_fn']}",
+    ]
+
+
+def _pot_dotlist(task):
+    tc = TASK_CONFIG[task]
+    mod = tc["ptools_module"]
+    tools = f"[{mod}.extract_constraints,{mod}.solve_problem,{mod}.format_answer]"
+    return [
+        f"evaluate.expt_name=test_{task}_pot",
+        f"ptools.{tc['interface']}.method=program_of_thought",
+        f"ptools.{tc['interface']}.tools={tools}",
+    ]
+
+
+def _react_dotlist(task):
+    tc = TASK_CONFIG[task]
+    mod = tc["ptools_module"]
+    tools = f"[{mod}.extract_constraints,{mod}.solve_problem,{mod}.format_answer]"
+    return [
+        f"evaluate.expt_name=test_{task}_react",
+        f"ptools.{tc['interface']}.method=simulate_pydantic",
+        f"ptools.{tc['interface']}.tools={tools}",
+    ]
+
+
+@needs_api_key
+class TestNaturalPlanBasics:
+    """Integration tests matching the Makefile baselines, 2 examples each."""
+
+    @pytest.mark.parametrize("task", ["calendar", "meeting", "trip"])
+    def test_structured_baseline(self, tmp_path, task):
+        df = _run_eval(tmp_path, task, _structured_dotlist(task))
+        assert "correct" in df.columns
+
+    @pytest.mark.parametrize("task", ["calendar", "meeting", "trip"])
+    def test_unstructured_baseline(self, tmp_path, task):
+        df = _run_eval(tmp_path, task, _unstructured_dotlist(task))
+        assert "correct" in df.columns
+
+    @pytest.mark.parametrize("task", ["calendar", "meeting", "trip"])
+    def test_workflow(self, tmp_path, task):
+        df = _run_eval(tmp_path, task, _workflow_dotlist(task))
+        assert "correct" in df.columns
+
+    @pytest.mark.parametrize("task", ["calendar", "meeting", "trip"])
+    def test_pot(self, tmp_path, task):
+        df = _run_eval(tmp_path, task, _pot_dotlist(task))
+        assert "correct" in df.columns
+
+    @pytest.mark.parametrize("task", ["calendar", "meeting", "trip"])
+    def test_react(self, tmp_path, task):
+        df = _run_eval(tmp_path, task, _react_dotlist(task))
+        assert "correct" in df.columns

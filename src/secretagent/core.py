@@ -1,12 +1,12 @@
 """Core components of SecretAgents package: interfaces and implementations.
 """
 
-import functools
 import inspect
 
-from abc import abstractmethod
 from pydantic import BaseModel, Field
 from typing import Any, Callable, Optional
+
+from secretagent import config
 
 # registries of defined interfaces and implementation factories
 
@@ -123,13 +123,52 @@ def implement_via_config(ptool_module, tools_cfg):
         method: simulate
       sport_for:
         method: simulate
+
+    Optional parse post-processing: add a ``parse`` key to any interface
+    config to wrap the implementation with a parse step.
+
+      calendar_scheduling:
+        method: simulate
+        parse:
+          method: simulate      # LLM re-parses the raw output
+          # or: method: direct, fn: my_module.my_parser
     """
     for func_name, factory_kws in tools_cfg.items():
         factory_kws = dict(factory_kws)
         # get the method and remove it from the config for this tool
         method = factory_kws.pop('method')
-        interface = getattr(ptool_module, func_name)
-        interface.implement_via(method, **factory_kws)
+        parse_cfg = factory_kws.pop('parse', None)
+        iface = getattr(ptool_module, func_name)
+        iface.implement_via(method, **factory_kws)
+        if parse_cfg:
+            _add_parse_wrapper(iface, parse_cfg)
+
+
+def _add_parse_wrapper(iface, parse_cfg):
+    """Wrap an interface's implementation with a parse post-processing step.
+
+    Creates a lightweight parse interface that inherits the original
+    interface's return type and docstring, so that ``simulate`` knows
+    the expected output format.
+    """
+    parse_cfg = dict(parse_cfg)
+    parse_method = parse_cfg.pop('method')
+    return_type = iface.annotations.get('return', str)
+
+    parse_iface = Interface(
+        func=lambda raw_output: raw_output,
+        name=f'{iface.name}__parse',
+        doc=f'Parse and normalize raw output into the expected format.\n\n{iface.doc}',
+        src='',
+        annotations={'raw_output': str, 'return': return_type},
+    )
+    parse_iface.implement_via(parse_method, **parse_cfg)
+
+    original_fn = iface.implementation.implementing_fn
+    def wrapped(*args, **kw):
+        raw = original_fn(*args, **kw)
+        return parse_iface(str(raw))
+    iface.implementation.implementing_fn = wrapped
 
 
 class Implementation(BaseModel):
@@ -145,26 +184,57 @@ class Implementation(BaseModel):
 
     class Factory(BaseModel):
         """Build one kind of implementation in a configurable way.
+
+        Subclasses override setup() and __call__():
+        - setup(**builder_kwargs) configures per-interface state on self
+        - __call__(*args, **kw) is the implementing function
+
+        Each call to build_implementation() creates a fresh copy of the
+        factory, so setup() can safely store per-interface state on self,
+        to be used by __call__() later on.
         """
-        @abstractmethod
-        def build_fn(self, interface: 'Interface', **builder_kwargs) -> Callable:
-            """Create a callable function that implements the interface.
-            """
-            ...
+        bound_interface: Optional['Interface'] = Field(
+            default=None,
+            description="Interface this factory copy is bound to (set by build_implementation)")
+        model: str | None = Field(
+            default=None,
+            description="LLM model override; defaults to config llm.model")
+
+        @property
+        def llm_model(self) -> str:
+            """Return the model to use: explicit override or config default."""
+            return self.model or config.require('llm.model')
+
+        @property
+        def __name__(self):
+            """Function-like name for the bound factory."""
+            if self.bound_interface is not None:
+                return self.bound_interface.name
+            return self.__class__.__name__
+
+        def setup(self, **builder_kwargs):
+            """Configure per-interface state on self."""
+            pass
+
+        def __call__(self, *args, **kw):
+            """The implementing function."""
+            raise NotImplementedError(
+                f'{self.__class__.__name__} must override __call__')
 
         def build_implementation(
                 self, interface: 'Interface', **builder_kwargs) -> 'Implementation':
             """Create an Implementation for the interface.
-            """
-            # wrap the implementing function appropriately
-            fn = self.build_fn(interface, **builder_kwargs)
 
-            @functools.wraps(interface.func)
-            def wrapped_fn(*fn_args, **fn_kw):
-                return fn(*fn_args, **fn_kw)
+            Creates a fresh copy of this factory so that per-interface state
+            can be stored on self without affecting the global prototype.
+            """
+            factory = self.model_copy()
+            factory.bound_interface = interface
+            factory.model = builder_kwargs.pop('model', None)
+            factory.setup(**builder_kwargs)
 
             return Implementation(
-                implementing_fn=wrapped_fn,
+                implementing_fn=factory,
                 factory_method=self.__class__.__name__,
                 factory_kwargs=builder_kwargs)
 

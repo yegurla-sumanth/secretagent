@@ -117,10 +117,8 @@ def test_executor_has_tool_functions():
         """Use tool_a."""
 
     factory = PoTFactory()
-    fn = factory.build_fn(orchestrator)
-    # The executor is captured in the closure; we can't inspect it directly,
-    # but we can verify the function was built without error
-    assert callable(fn)
+    impl = factory.build_implementation(orchestrator)
+    assert callable(impl.implementing_fn)
     _INTERFACES.remove(tool_a)
     _INTERFACES.remove(orchestrator)
 
@@ -172,7 +170,9 @@ def test_pot_records_generated_code():
     pot_entries = [r for r in rollout if r['func'] == 'add_two']
     assert len(pot_entries) == 1
     assert 'step_info' in pot_entries[0]
-    assert 'inc' in pot_entries[0]['step_info']['generated_code']
-    assert 'final_answer' in pot_entries[0]['step_info']['generated_code']
+    si = pot_entries[0]['step_info']
+    assert 'prompt' in si and 'llm_output' in si
+    assert 'inc' in si['extracted_python']
+    assert 'final_answer' in si['extracted_python']
     _INTERFACES.remove(inc)
     _INTERFACES.remove(add_two)

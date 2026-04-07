@@ -5,19 +5,16 @@ to implement an Interface.
 """
 
 import hashlib
-import pathlib
-from string import Template
 import time
-from typing import Callable
-
+from pydantic import Field
 from pydantic_ai import Agent
 from pydantic_ai_litellm import LiteLLMModel
 from litellm import cost_per_token
 
 from secretagent import config, record
 from secretagent.cache_util import cached
-from secretagent.core import Interface, register_factory
-from secretagent.implement.core import SimulateFactory, resolve_tools
+from secretagent.core import register_factory
+from secretagent.implement.core import SimulateFactory, resolve_tools, _load_template
 from secretagent.llm_util import echo_boxed
 
 def _run_agent_hashkey(_, kwds):
@@ -42,7 +39,7 @@ def _run_agent_impl(interface, model_name, return_type, prompt, tools):
         echo_boxed(prompt, 'llm_input')
 
     # create the Model the agent will use and the Agent
-    model = LiteLLMModel(model_name=config.require('llm.model'))
+    model = LiteLLMModel(model_name=model_name)
     return_type = interface.annotations.get('return', str)
     agent = Agent(model, output_type=return_type, tools=tools)
 
@@ -59,7 +56,7 @@ def _run_agent_impl(interface, model_name, return_type, prompt, tools):
     # compute the other stats
     usage = result.usage()
     input_cost, output_cost = cost_per_token(
-        model=config.get('llm.model'),
+        model=model_name,
         prompt_tokens=usage.input_tokens,
         completion_tokens=usage.output_tokens,
     )
@@ -97,40 +94,43 @@ class SimulatePydanticFactory(SimulateFactory):
         means just those tools
     """
 
-    def build_fn(self, interface: Interface, tools=None, **prompt_kw) -> Callable:  # type: ignore[override]
-        tools = resolve_tools(interface, tools)
+    tools: list = Field(default_factory=list)
+    prompt_kw: dict = Field(default_factory=dict)
 
-        def result_fn(*args, **kw):
-            with config.configuration(**prompt_kw):
-                prompt = self.create_prompt(interface, *args, **kw)
-                try:
-                    answer, stats, messages = _run_agent(
-                        interface=interface,
-                        model_name=config.require('llm.model'),
-                        return_type=interface.annotations.get('return', str),
-                        prompt=prompt,
-                        tools=tools)
-                except Exception as ex:
-                    record.record(
-                        func=interface.name, args=args, kw=kw,
-                        output=f'**exception**: {ex}', step_info=[],
-                        stats=dict(input_tokens=0, output_tokens=0, latency=0, cost=0))
-                    raise
+    def setup(self, tools=None, **prompt_kw):
+        self.tools = resolve_tools(self.bound_interface, tools)
+        self.prompt_kw = prompt_kw
+
+    def __call__(self, *args, **kw):
+        interface = self.bound_interface
+        with config.configuration(**self.prompt_kw):
+            prompt = self.create_prompt(interface, *args, **kw)
+            try:
+                answer, stats, messages = _run_agent(
+                    interface=interface,
+                    model_name=self.llm_model,
+                    return_type=interface.annotations.get('return', str),
+                    prompt=prompt,
+                    tools=self.tools)
+            except Exception as ex:
                 record.record(
-                    func=interface.name,
-                    args=args,
-                    kw=kw,
-                    output=answer,
-                    step_info=messages,
-                    stats=stats)
-                return answer
-        return result_fn
+                    func=interface.name, args=args, kw=kw,
+                    output=f'**exception**: {ex}', step_info=[],
+                    stats=dict(input_tokens=0, output_tokens=0, latency=0, cost=0))
+                raise
+            record.record(
+                func=interface.name,
+                args=args,
+                kw=kw,
+                output=answer,
+                step_info=messages,
+                stats=stats)
+            return answer
 
     def create_prompt(self, interface, *args, **kw):
         """Construct a prompt that calls an LLM to predict the output of the function.
         """
-        template_path = pathlib.Path(__file__).parent / 'prompt_templates' / 'simulate_pydantic.txt'
-        template = Template(template_path.read_text())
+        template = _load_template('simulate_pydantic.txt')
         input_args = interface.format_args(*args, **kw)
         if config.get('llm.thinking'):
             thoughts = "<thought>\nANY THOUGHTS\n</thought>\n"

@@ -1,3 +1,6 @@
+-include ../../.env
+export
+
 #
 # Run experiments — 5 conditions x 3 tasks
 #
@@ -143,3 +146,20 @@ pair:
 
 compare:
 	uv run python -m secretagent.cli.results compare-configs results/*
+
+export:
+	uv run python -m secretagent.cli.results export results/*
+
+plot: plot_cal plot_meet plot_trip
+
+plot_cal:
+	uv run python -m secretagent.cli.results plot --metric cost- --metric correct --output plot_calendar.png results/run_*/*cal_*
+
+plot_meet:
+	uv run python -m secretagent.cli.results plot --metric cost- --metric correct --output plot_meeting.png results/run_*/*meet_*
+
+plot_trip:
+	uv run python -m secretagent.cli.results plot --metric cost- --metric correct --output plot_trip.png results/run_*/*trip_*
+
+test:
+	uv run python -m pytest ../../benchmarks/tests/test_natural_plan.py -v

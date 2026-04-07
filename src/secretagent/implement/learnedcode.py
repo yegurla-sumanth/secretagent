@@ -3,12 +3,12 @@
 import importlib.util
 from glob import glob
 from pathlib import Path
-from typing import Callable
+from typing import Any
 
 from omegaconf import OmegaConf
 
 from secretagent import config
-from secretagent.core import Interface, Implementation, _FACTORIES, register_factory
+from secretagent.core import Implementation, _FACTORIES, register_factory
 
 
 def _load_learned_module(learned_path):
@@ -78,23 +78,25 @@ class LearnedCodeFactory(Implementation.Factory):
       foo.implement_via('learned_code', learner='rote', backoff=True)
     """
 
-    def build_fn(self, interface: Interface, learner: str,  # type: ignore[override]
-                 backoff: bool = False, **_kw) -> Callable:
+    learned_fn: Any = None
+    backoff_impl: Any = None
+
+    def setup(self, learner: str, backoff: bool = False, **_kw):
+        interface = self.bound_interface
         learned_path = _find_learned_path(interface.name, learner)
         mod = _load_learned_module(learned_path)
         fn = getattr(mod, interface.name, None)
         if fn is None:
             raise AttributeError(
                 f'{learned_path} does not define a function named {interface.name!r}')
-        if not backoff:
-            return fn
-        workdir = learned_path.parent
-        backoff_impl = _build_backoff_impl(interface, workdir)
-        def learned_with_backoff(*args, **kw):
-            result = fn(*args, **kw)
-            if result is None:
-                return backoff_impl.implementing_fn(*args, **kw)
-            return result
-        return learned_with_backoff
+        self.learned_fn = fn
+        if backoff:
+            self.backoff_impl = _build_backoff_impl(interface, learned_path.parent)
+
+    def __call__(self, *args, **kw):
+        result = self.learned_fn(*args, **kw)
+        if result is None and self.backoff_impl is not None:
+            return self.backoff_impl.implementing_fn(*args, **kw)
+        return result
 
 register_factory('learned_code', LearnedCodeFactory())

@@ -2,32 +2,23 @@
 
 ## Cleanups
 
- * subprocess out of optimizer
+ * move subprocess out of optimizer and use expt
  * cleanup learn/examples.py, and traces.py
    - It should be a Learner
    - maybe a Learner should output an implementation config? that's more general
    - need to add filtering for iscorrect examples
  * make orchestrate a Learner
+ * should check if rulearena tests drop's stuff in results_dir or not
+ * should move common LLM values out of CLAUDE.me
 
-## Core issues
+## Core issues/bugs
 
- * non-primitive types don't work with Simulate
-   * problem is output validation, should at least give warnings
-   * when errors are caught by evaluator's, should _record relevant
-     information from the stack trace
+ * output processing code is so fragile and messy, is there a way to fix that?
+ * boxes should wrap text
 
 ## Caching
 
  * Check if disabling caching from the command-line works
- * Revisit how llm_util does caching - as is using the cache bypasses echos
-
-## Experimentation
-
- * Run experiments in sports_understanding
-     * use smaller models till the task gets "interesting"?
-       * even with deepseek unstructured_baseline is 69, pot 72, react 65
-	   * react often runs out of retries
-       * unstructured_baseline has trouble finding final answer
 
 ## Learning methods
 
@@ -46,7 +37,7 @@ Add a learn/distill_pot.py
 ## Code quality/etc
 
  * More guidance for claude/devs on defense programming
- * Standardize implement strategies: [un]structured_baseline, pot, workflow, react
+ * Standardize implementation strategies: [un]structured_baseline, pot, workflow, react
 
 ## Known minor bugs
 

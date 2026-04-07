@@ -176,13 +176,16 @@ class OolongEvaluator(Evaluator):
                 }
         else:
             metrics = self.compare_predictions(predicted_output, example.expected_output)
-        return dict(
+        row = dict(
             predicted_output=predicted_output,
             expected_output=example.expected_output,
             answer_attempts=answer_attempts,
             **metrics,
             **llm_usage_stats,
         )
+        if config.get("evaluate.record_details"):
+            row["rollout"] = records
+        return row
 
     def measurements(self, dataset: Dataset, interface: Any) -> Iterator[dict[str, Any]]:
         """Phase 2: optional thread pool (``oolong.max_workers``) for concurrent LLM calls."""
